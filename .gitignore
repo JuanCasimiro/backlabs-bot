@@ -1,0 +1,13 @@
+# Chatwoot source clone, for reading only (not versioned)
+/chatwoot/
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Node
+node_modules/
+dist/
+coverage/
+*.log
