@@ -4,8 +4,8 @@ Checklist para dejar el repo listo para contribuciones. Se puede hacer desde cua
 
 ## 1. En el repo (código)
 
-- [ ] **CI con GitHub Actions**: `.github/workflows/ci.yml` que en cada push y PR a `main` instale con `npm ci` y corra `npm run check` (typecheck, lint, tests) con Node 24.
-- [ ] **`CONTRIBUTING.md` corto**: cómo levantar el proyecto (`npm install`, `npm run check`), flujo fork → rama → PR, TDD para el runtime, evals antes de tocar prompts y un ADR por decisión importante.
+- [x] **CI con GitHub Actions** (hecho 2026-10-19: `.github/workflows/ci.yml`, job `check`): `.github/workflows/ci.yml` que en cada push y PR a `main` instale con `npm ci` y corra `npm run check` (typecheck, lint, tests) con Node 24.
+- [x] **`CONTRIBUTING.md` corto** (hecho 2026-10-19): cómo levantar el proyecto (`npm install`, `npm run check`), flujo fork → rama → PR, TDD para el runtime, evals antes de tocar prompts y un ADR por decisión importante.
 
 ## 2. En GitHub (settings, después de que el CI corrió al menos una vez)
 

@@ -66,8 +66,8 @@ Verified 2026-10-19: `tsc` clean, 33 tests passing (4 skipped: contract against 
 
 | ID | Feature | Status |
 |---|---|---|
-| OS-01 | GitHub Actions CI: `npm ci` + `npm run check` on push and PR to `main`, Node 24 | priorizado |
-| OS-02 | `CONTRIBUTING.md` | priorizado |
+| OS-01 | GitHub Actions CI: `npm ci` + `npm run check` on push and PR to `main`, Node 24 | ✅ 2026-10-19 (`.github/workflows/ci.yml`, job `check`) |
+| OS-02 | `CONTRIBUTING.md` | ✅ 2026-10-19 |
 | OS-03 | Branch ruleset on `main` (PR, 1 approval, status check, admin bypass while single-maintainer) | after OS-01 |
 | OS-04 | README demo (GIF) once the bot does something useful | after RT-* + EX-01 |
 | OS-05 | `CODE_OF_CONDUCT.md`, `SECURITY.md`, issue/PR templates, `CODEOWNERS` | when there are contributors |
