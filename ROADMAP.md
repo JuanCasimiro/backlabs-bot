@@ -41,6 +41,9 @@ Verified 2026-10-19: `tsc` clean, 33 tests passing (4 skipped: contract against 
 | TL-01 | HTTP tool pack (declarative endpoints, auth, schema) | idea |
 | TL-02 | MCP client tool pack | idea |
 | TL-03 | Scheduling tool (creates follow-up tasks, RT-07) | idea |
+| TL-04 | Document knowledge tool (external RAG service) | idea |
+
+**TL-04 notes.** For clients whose knowledge lives in documents (manuals, manufacturer catalogs, supplier price lists in PDF, regulations), not in a database. Run [LightRAG](https://github.com/HKUDS/LightRAG) / [RAG-Anything](https://github.com/HKUDS/RAG-Anything) (MIT, Python, Postgres backend) as a separate service and reach it through TL-01 (HTTP) or TL-02 (MCP); nothing enters the core (ADR 0001: heavy ML stays outside). Not for structured data: stock, prices, orders or appointments are queried exactly from the system of record, never retrieved by similarity. Before adopting: indexing cost (many LLM calls per document), parser models, and privacy (document content goes to the model provider; use a self-hosted model or index only non-sensitive documents).
 
 ### Knowledge capture
 
