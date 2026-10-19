@@ -1,0 +1,25 @@
+{
+	"name": "backlabs-bot",
+	"private": true,
+	"type": "module",
+	"workspaces": [
+		"packages/*"
+	],
+	"engines": {
+		"node": ">=24"
+	},
+	"scripts": {
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"typecheck": "tsc --noEmit",
+		"lint": "biome check .",
+		"format": "biome check --write .",
+		"check": "npm run typecheck && npm run lint && npm test"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.5.15",
+		"@types/node": "24.19.2",
+		"typescript": "7.0.2",
+		"vitest": "5.0.5"
+	}
+}

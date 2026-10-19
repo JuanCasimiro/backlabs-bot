@@ -184,7 +184,6 @@ How we build, by layer:
 
 ## 10. Open questions
 
-- Where the Chatwoot connector lives: `packages/connector-chatwoot` here (public), or a private shared package. It currently lives in the first client repo.
 - Debounce window and attachment wait times: defaults per channel, overridable per client.
 
 ## Acknowledgements

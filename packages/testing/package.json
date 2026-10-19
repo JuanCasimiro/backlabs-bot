@@ -1,0 +1,16 @@
+{
+	"name": "@backlabs/testing",
+	"version": "0.0.0",
+	"description": "Test doubles and contract suites for Backlabs Bot: an in-memory channel and the ChannelPort contract.",
+	"license": "Apache-2.0",
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"dependencies": {
+		"@backlabs/core": "0.0.0"
+	},
+	"peerDependencies": {
+		"vitest": ">=5"
+	}
+}

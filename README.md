@@ -2,7 +2,16 @@
 
 Open-source multi-agent framework for automating customer conversations. It is CRM- and channel-agnostic: you connect it to your own inbox or CRM (Chatwoot, Zendesk, a custom one...) by implementing a small connector.
 
-> **Status:** early design. Nothing usable yet. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+> **Status:** in progress. Done: domain types and ports (`packages/core`), the Chatwoot connector, and the in-memory channel with its contract suite. Next: the runtime. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
+## Development
+
+Requires Node 24 (TypeScript runs directly, no build step).
+
+```bash
+npm install
+npm run check   # typecheck, lint, tests
+```
 
 ## Planned features
 

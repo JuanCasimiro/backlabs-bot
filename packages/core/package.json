@@ -1,0 +1,13 @@
+{
+	"name": "@backlabs/core",
+	"version": "0.0.0",
+	"description": "Domain types and ports of Backlabs Bot: events, actions, messages and the channel interface.",
+	"license": "Apache-2.0",
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"dependencies": {
+		"zod": "4.6.7"
+	}
+}
