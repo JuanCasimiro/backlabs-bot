@@ -18,11 +18,16 @@ Open-source multi-agent framework for automating customer conversations. It is C
 ## Repository layout (planned)
 
 ```
-packages/core   agent loop, handoffs, tools, conversation state, connector interface
-docs/           architecture and design notes
+packages/core            domain types and ports: events, actions, agent config
+packages/runtime         LangGraph orchestration, worker, inbox/outbox, task queue, approvals
+packages/connector-*     channel adapters (Chatwoot first)
+packages/tools-*         generic tool packs: scheduling, HTTP, MCP client
+packages/testing         in-memory adapters, eval harness, adapter contract tests
+examples/                a runnable bot
+docs/                    architecture and ADRs
 ```
 
-Connectors for specific CRMs live in the projects that use them, or in separate packages.
+Each client project is a separate repo with its agents, prompts, tool packs and evals, deployed on its own. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and [`docs/adr/`](docs/adr/).
 
 ## License
 
