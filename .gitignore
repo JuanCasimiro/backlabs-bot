@@ -1,6 +1,3 @@
-# Chatwoot source clone, for reading only (not versioned)
-/chatwoot/
-
 # Secrets
 .env
 .env.*
