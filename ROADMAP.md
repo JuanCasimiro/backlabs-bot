@@ -14,8 +14,20 @@ Source of truth for scope, IDs and decisions. Update it in the same commit as th
 | CW-02 | Chatwoot channel: all six actions through the REST API, handoff = assignment + `open`, `ChatwootApiError.retryable` on 429/5xx | `packages/connector-chatwoot/src/channel.ts` |
 | TEST-01 | `InMemoryChannel` + `channelContract` suite, runnable against any adapter | `packages/testing` |
 | DOC-01 | `docs/ARCHITECTURE.md` + ADR 0001–0005 | `docs/` |
+| CORE-05 | Verified identity: `Contact.phoneVerified`, `request_phone` action, `Tool` / `defineTool` with `requires: "verified_phone"`, `BotConfig` (agents, access list, fallback text) validated with zod (ADR 0006) | `packages/core/src/agents.ts` |
+| CW-03 | Chatwoot: phone verified only on WhatsApp / SMS inboxes; `request_phone` sent as a public message | `packages/connector-chatwoot` |
+| RT-01 | Inbox: `enqueue` dedups by `eventId`, never runs an agent; `webhookHandler` for Node HTTP | `packages/runtime/src/inbox.ts`, `webhook.ts` |
+| RT-02 | Worker: lease per conversation with `FOR UPDATE SKIP LOCKED`, debounce, folds pending events into one run, discards a run when a message arrives during it and forks from the last committed checkpoint | `packages/runtime/src/worker.ts`, `conversations.ts` |
+| RT-03 | Graph: config → `StateGraph` (agent node + tools node), transfers, `handoff_to_human`, `request_phone_verification`, memory in `PostgresSaver` | `packages/runtime/src/graph.ts` |
+| RT-04 | Outbox + dispatcher: actions committed with "events processed", idempotency keys `<run>:<n>`, ordered per conversation, retry with backoff for `retryable` errors | `packages/runtime/src/outbox.ts`, `dispatcher.ts` |
+| RT-06 | Run ledger: `RUNNING → SUCCEEDED / FAILED / CANCELLED`, agent, model, tokens | `packages/runtime/src/runs.ts` |
+| RT-09 | Copilot mode: the answer becomes a private note; no tool that writes to the customer | `packages/runtime/src/graph.ts` |
+| ID-01 | Identity gate (personal-data tools need a verified phone, passed as context) + access list without model calls (ADR 0006); conversation mode bot/human (ADR 0007) | `packages/runtime/src/identity.ts`, `fold.ts` |
+| TG-01 | Telegram connector: long polling and webhook, own-contact sharing verifies the phone, operator chat for notes and handoffs, `/resume` (ADR 0007) | `packages/connector-telegram` |
+| TEST-02 | `ScriptedChatModel` + `say` / `call` for deterministic runtime tests | `packages/runtime/src/testing.ts` |
+| DOC-02 | ADR 0006–0007, runtime spec, repo skills (`sdd`, `tdd`, `clean-code`, `new-connector`, `agent-eval`) | `docs/`, `.claude/skills/` |
 
-Verified 2026-10-19: `tsc` clean, 33 tests passing (4 skipped: contract against a live Chatwoot, needs `CHATWOOT_CONTRACT_*`).
+Verified 2026-10-20: `tsc` and Biome clean, 93 tests passing against Postgres 16 (5 skipped: contract against a live Chatwoot, needs `CHATWOOT_CONTRACT_*`).
 
 ## 🔜 Backlog
 
@@ -23,16 +35,19 @@ Verified 2026-10-19: `tsc` clean, 33 tests passing (4 skipped: contract against 
 
 | ID | Feature | What it does | Status |
 |---|---|---|---|
-| RT-01 | Inbox | Webhook handler normalizes the event, inserts into `inbox` deduplicated by `eventId`, returns 200. Never runs an agent | priorizado |
-| RT-02 | Worker with per-conversation lock | Claims inbox rows with `FOR UPDATE SKIP LOCKED`; one run per conversation at a time; messages during a run/debounce fold into the next run; stale responses discarded; waits briefly for attachments | priorizado |
-| RT-03 | Graph builder | Client config (zod, validated at boot) → `StateGraph`: one node per agent, handoffs as edges, built-in tools mapped to actions. `PostgresSaver` with `thread_id` = conversation id | priorizado |
-| RT-04 | Outbox + dispatcher | Actions written as `PLANNED` with idempotency key; dispatcher performs through ports and marks `SUCCEEDED` / `FAILED`; retried steps re-plan the same key | priorizado |
 | RT-05 | Approval policy | Per tool: `auto` / `approval` (`interrupt()`, request as private note, resume on decision) / `denied-unattended`. Decisions about people default to `approval` | priorizado |
-| RT-06 | Run ledger | `QUEUED → RUNNING → WAITING_FOR_APPROVAL → SUCCEEDED | FAILED | CANCELLED`, model, tokens, cost | priorizado |
 | RT-07 | Task queue (follow-ups) | Postgres table with leases and max attempts; scheduler emits "task due" into the inbox with a human-readable reason | idea |
 | RT-08 | Capabilities preamble | Enabled tool packs and integrations printed at boot and injected at session start | idea |
-| RT-09 | Copilot mode | Agent writes private notes and suggestions, never replies to the customer | idea |
+| RT-11 | Memory trimming | Send the model only the last N turns (or a summary) of long conversations; today the whole thread goes | idea |
+| RT-12 | Attachment wait + cost | Wait briefly for attachments that arrive after the text; cost in currency in the run ledger | idea |
 | RT-10 | Import boundaries in CI | `dependency-cruiser`: domain cannot import runtime, adapters or LangGraph | idea |
+
+### Connectors
+
+| ID | Feature | Status |
+|---|---|---|
+| TG-02 | Telegram: relay operator replies to the customer through the bot (today humans answer from their own account) | idea |
+| WA-01 | WhatsApp Cloud API direct connector (today WhatsApp arrives through Chatwoot) | idea |
 
 ### Tools (`packages/tools-*`)
 
@@ -92,3 +107,7 @@ Verified 2026-10-19: `tsc` clean, 33 tests passing (4 skipped: contract against 
 | 2026-10-19 | One deployment per client; no tenant concept in the core; client repos are private (ADR 0005). |
 | 2026-10-19 | Chatwoot is the first connector; its local setup moved out of this repo into the first client repo so the core stays CRM-agnostic. |
 | 2026-10-19 | `ROADMAP.md` and `CLAUDE.md` added as the agent-facing source of truth, next to ARCHITECTURE + ADRs. |
+| 2026-10-20 | Verified identity comes from the channel, never from the model; personal-data tools get the phone as context; optional access list (ADR 0006). |
+| 2026-10-20 | The runtime owns the bot/human mode of each conversation; direct channels send notes and handoffs to an operator chat; Telegram is the first direct channel (ADR 0007). |
+| 2026-10-20 | A failed run hands off to a human instead of retrying; a run interrupted by a new message is discarded and the next one forks from the last committed checkpoint (runtime spec). |
+| 2026-10-20 | Approval policy (RT-05) postponed: no tool in the first deployments writes to a system of record. |

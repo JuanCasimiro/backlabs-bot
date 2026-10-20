@@ -1,42 +1,44 @@
-# TODO: reglas del repo open source
+# TODO: open source hygiene
 
-Checklist para dejar el repo listo para contribuciones. Se puede hacer desde cualquier compu.
+Checklist for making the repo ready for contributions.
 
-## 1. En el repo (código)
+## 1. In the repo
 
-- [x] **CI con GitHub Actions** (hecho 2026-10-19: `.github/workflows/ci.yml`, job `check`): `.github/workflows/ci.yml` que en cada push y PR a `main` instale con `npm ci` y corra `npm run check` (typecheck, lint, tests) con Node 24.
-- [x] **`CONTRIBUTING.md` corto** (hecho 2026-10-19): cómo levantar el proyecto (`npm install`, `npm run check`), flujo fork → rama → PR, TDD para el runtime, evals antes de tocar prompts y un ADR por decisión importante.
+- [x] **CI with GitHub Actions** (2026-10-19, `.github/workflows/ci.yml`, job `check`): `npm ci` + `npm run check` on every push and PR to `main`, Node 24. Since 2026-10-20 with a Postgres service, so runtime tests run.
+- [x] **Short `CONTRIBUTING.md`** (2026-10-19): setup, fork → branch → PR, TDD for the runtime, evals before prompts, an ADR per important decision.
+- [x] **`.gitattributes`** with `eol=lf` so Biome passes on Windows clones (2026-10-20).
 
-## 2. En GitHub (settings, después de que el CI corrió al menos una vez)
+## 2. On GitHub (settings, after CI has run at least once)
 
-En el repo: **Settings → Rules → Rulesets → New ruleset → New branch ruleset**
+**Settings → Rules → Rulesets → New ruleset → New branch ruleset**
 
-- [ ] Nombre: `main`, *Enforcement status*: **Active**
-- [ ] *Target branches*: **Add target → Include default branch**
+- [ ] Name `main`, *Enforcement status* **Active**
+- [ ] *Target branches*: **Include default branch**
 - [ ] **Restrict deletions**
 - [ ] **Block force pushes**
-- [ ] **Require a pull request before merging**, con *Required approvals*: 1
-- [ ] **Require status checks to pass**: agregar el check del CI (aparece recién después de la primera corrida)
-- [ ] *Bypass list*: **Add bypass → Repository admin**, para seguir pusheando directo a `main` mientras sea un proyecto de una persona. Sacarlo cuando haya contribuidores.
+- [ ] **Require a pull request before merging**, *Required approvals* 1
+- [ ] **Require status checks to pass**: the CI `check` job
+- [ ] *Bypass list*: **Repository admin**, to keep pushing to `main` while this is a one-person project. Remove it when there are contributors.
+- [ ] **Settings → Security → Private vulnerability reporting**: enable.
 
-Por defecto solo el dueño puede pushear. Los demás hacen fork y PR, no hace falta configurarlo.
+Only the owner can push by default; everyone else forks and opens a PR.
 
-## 3. Más adelante
+## 3. Later
 
-**Cuando el bot haga algo útil**
-- [ ] README con demo (GIF del bot en Chatwoot) y `docker compose up` que funcione de punta a punta
-- [ ] Issues con la etiqueta `good first issue`
+**When the bot does something useful**
+- [ ] README with a demo (GIF) and an example that runs end to end
+- [ ] Issues labelled `good first issue`
 
-**Cuando haya contribuidores**
+**When there are contributors**
 - [ ] `CODE_OF_CONDUCT.md` (Contributor Covenant)
-- [ ] `SECURITY.md`: reportes de vulnerabilidades en privado (*Settings → Security → Private vulnerability reporting*)
-- [ ] Templates de issue y PR en `.github/`
-- [ ] `CODEOWNERS` para que el dueño sea revisor obligatorio
-- [ ] Sacar el bypass del ruleset y trabajar con PRs propios también
+- [ ] `SECURITY.md`
+- [ ] Issue and PR templates in `.github/`
+- [ ] `CODEOWNERS`
+- [ ] Remove the ruleset bypass and work through PRs too
 
-**Si se publica en npm**
-- [ ] Versionado semver y changelog (por ejemplo con Changesets)
+**If published to npm**
+- [ ] Semver and a changelog (e.g. Changesets)
 
-## Recordatorio
+## Reminder
 
-Nunca commitear tokens ni `.env` (ya están en `.gitignore`). Si se filtra uno, **revocarlo**: borrarlo en otro commit no alcanza, porque queda en el historial.
+Never commit tokens or `.env` (they are in `.gitignore`). If one leaks, **revoke it**: deleting it in another commit is not enough, it stays in the history.

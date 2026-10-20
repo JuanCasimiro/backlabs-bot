@@ -30,7 +30,7 @@ Backlabs Bot is the base we install for each client that needs a conversational 
                                    │ planned actions → outbox table
                                    ▼
           ┌──────────────── outbound adapters ───────────────┐
-          │ ChannelPort      → Chatwoot (later: web, email)  │
+          │ ChannelPort      → Chatwoot, Telegram (later: web)│
           │ ToolPort         → HTTP, MCP (Motor Stock, ATS)  │
           │ ActionLedger     → Postgres                      │
           │ TaskQueue        → Postgres                      │
@@ -63,6 +63,7 @@ The core is channel- and CRM-agnostic. A **channel connector** translates betwee
 - hand off to a human team;
 - add a label;
 - set conversation attributes;
+- ask the customer to verify their phone number (ADR 0006);
 - resolve the conversation;
 - schedule a follow-up (§6).
 
@@ -128,6 +129,10 @@ webhook ──► api ──INSERT (dedup)──► inbox ──► worker ─�
 
 **Outbox.** A dispatcher executes planned actions through the ports and marks them `SUCCEEDED` or `FAILED`. The unique idempotency key means a retried graph step re-plans the same action instead of sending a second message.
 
+**Conversation mode.** The runtime knows whether the bot or a human owns each conversation. A handoff or a human reply switches it to `human`, and the bot stops answering; a resolution switches it back to `bot` with a fresh memory. This works the same on channels with an inbox (Chatwoot) and on direct channels (Telegram), where notes and handoffs go to an operator chat. See [ADR 0007](adr/0007-direct-channels-and-conversation-mode.md).
+
+**Identity.** Tools that read a customer's own records require a phone number the channel verified, and receive it from the runtime, never from the model. An optional access list limits a deployment to known numbers. See [ADR 0006](adr/0006-verified-identity-from-the-channel.md).
+
 **Run ledger.** Every run records status (`QUEUED → RUNNING → WAITING_FOR_APPROVAL → SUCCEEDED | FAILED | CANCELLED`), model, input/output tokens and cost.
 
 ## 5. Tools and systems of record
@@ -152,7 +157,7 @@ When a conversation is resolved, an extraction step reads the transcript and pro
 backlabs-bot  (public)
 ├─ packages/core            domain types and ports: Event, Action, AgentConfig, ToolPack
 ├─ packages/runtime         LangGraph graph builder, worker, inbox/outbox, task queue, approvals
-├─ packages/connector-*     channel adapters (Chatwoot first)
+├─ packages/connector-*     channel adapters: Chatwoot, Telegram
 ├─ packages/tools-*         generic tool packs: scheduling, HTTP, MCP client
 ├─ packages/testing         in-memory channel, fake tools, eval harness, adapter contract suite
 └─ examples/                a runnable bot with docker compose

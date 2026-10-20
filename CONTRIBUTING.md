@@ -11,6 +11,14 @@ npm install
 npm run check   # typecheck, lint, tests — must pass before you open a PR
 ```
 
+Runtime tests run against a real Postgres and are skipped without one:
+
+```bash
+export TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres
+```
+
+Any Postgres 16 works (`docker run -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:16`). Each test file creates and drops its own schema.
+
 On Windows, set `git config core.autocrlf false` before cloning (or re-checkout): Biome expects LF and will otherwise flag every file.
 
 ## How changes land

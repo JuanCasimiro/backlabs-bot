@@ -33,6 +33,10 @@ npm install
 npm run check      # typecheck + lint + tests — must pass before every commit
 ```
 
+Runtime tests need Postgres: set `TEST_DATABASE_URL` (see `CONTRIBUTING.md`), or they are skipped. CI runs them against a Postgres service.
+
+Repo skills in `.claude/skills/`: `sdd` (spec or ADR first), `tdd` (runtime and adapters), `clean-code`, `new-connector`, `agent-eval`.
+
 - Node ≥ 24, TypeScript runs directly (no build step, `.ts` imports with extension).
 - Formatting and lint: Biome (tabs). `npm run format` fixes formatting.
 - On Windows with `core.autocrlf=true`, `biome check` reports format errors on every file because of CRLF; typecheck and tests are unaffected. Prefer `git config core.autocrlf false` for this clone.
