@@ -9,3 +9,5 @@ One file per decision that is expensive to reverse. Format: context, decision, c
 | [0003](0003-hexagonal-at-the-edges.md) | Hexagonal at the edges, LangGraph in the middle | Accepted |
 | [0004](0004-transactional-inbox-outbox.md) | Transactional inbox and outbox | Accepted |
 | [0005](0005-one-deployment-per-client.md) | One deployment per client | Accepted |
+| [0006](0006-verified-identity-from-the-channel.md) | Verified identity comes from the channel, never from the model | Accepted |
+| [0007](0007-direct-channels-and-conversation-mode.md) | Direct channels and the bot/human mode of a conversation | Accepted |
