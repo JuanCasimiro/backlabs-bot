@@ -44,6 +44,16 @@ export const SetAttributesSchema = z.object({
 	),
 });
 
+/**
+ * Asks the customer to prove their phone number. Channels that can (a "share
+ * my number" button) do it natively; others send the text. See ADR 0006.
+ */
+export const RequestPhoneSchema = z.object({
+	type: z.literal("request_phone"),
+	...base,
+	text: z.string().min(1),
+});
+
 export const ResolveSchema = z.object({
 	type: z.literal("resolve"),
 	...base,
@@ -55,6 +65,7 @@ export const ActionSchema = z.discriminatedUnion("type", [
 	HandoffSchema,
 	AddLabelsSchema,
 	SetAttributesSchema,
+	RequestPhoneSchema,
 	ResolveSchema,
 ]);
 export type Action = z.infer<typeof ActionSchema>;

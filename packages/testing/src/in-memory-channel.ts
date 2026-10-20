@@ -54,6 +54,7 @@ export class InMemoryChannel implements ChannelPort {
 		const state = this.conversation(action.conversationId);
 
 		switch (action.type) {
+			case "request_phone":
 			case "reply":
 			case "note": {
 				const id = `mem-${this.#nextId++}`;

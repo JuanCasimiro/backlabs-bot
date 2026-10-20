@@ -61,6 +61,7 @@ describe("message_created", () => {
 					id: "77",
 					name: "Juan Pérez",
 					phone: "+5491100000000",
+					phoneVerified: true,
 				},
 				message: {
 					id: "501",
@@ -72,6 +73,22 @@ describe("message_created", () => {
 				},
 			},
 		});
+	});
+
+	it("does not verify the phone on channels that do not prove it", () => {
+		const base = messageCreated();
+		const result = inbound.parse(
+			signed({
+				...base,
+				conversation: { ...base.conversation, channel: "Channel::WebWidget" },
+			}),
+		);
+
+		expect(result.ok && result.event?.type === "message.received").toBe(true);
+		if (result.ok && result.event?.type === "message.received") {
+			expect(result.event.contact.phone).toBe("+5491100000000");
+			expect(result.event.contact.phoneVerified).toBeUndefined();
+		}
 	});
 
 	it("keeps the same event id when Chatwoot retries the delivery", () => {

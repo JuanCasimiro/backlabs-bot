@@ -90,6 +90,17 @@ function read<S extends z.ZodType>(
 	return { ok: true, event: event && EventSchema.parse(event) };
 }
 
+/**
+ * Inboxes where the sender's number is the address the message came from, so
+ * the network has already proven it (ADR 0006). On every other inbox a phone
+ * on the contact may have been typed by anyone.
+ */
+const PHONE_PROVING_CHANNELS = new Set([
+	"Channel::Whatsapp",
+	"Channel::TwilioSms",
+	"Channel::Sms",
+]);
+
 function fromMessageCreated(p: MessageCreatedPayload): Event | null {
 	if (p.private) return null;
 
@@ -108,6 +119,10 @@ function fromMessageCreated(p: MessageCreatedPayload): Event | null {
 				id: String(p.sender.id),
 				...(p.sender.name ? { name: p.sender.name } : {}),
 				...(p.sender.phone_number ? { phone: p.sender.phone_number } : {}),
+				...(p.sender.phone_number &&
+				PHONE_PROVING_CHANNELS.has(p.conversation.channel ?? "")
+					? { phoneVerified: true }
+					: {}),
 				...(p.sender.email ? { email: p.sender.email } : {}),
 			},
 			message: toMessage(p, "customer"),

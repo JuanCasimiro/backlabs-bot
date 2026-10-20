@@ -112,6 +112,9 @@ export function chatwootChannel(options: ChatwootChannelOptions): ChannelPort {
 			const path = conversation(action.conversationId);
 
 			switch (action.type) {
+				// Chatwoot has no "share your number" button; on WhatsApp the number
+				// is already verified, elsewhere the text is all we can send.
+				case "request_phone":
 				case "reply":
 				case "note": {
 					const created = await write(

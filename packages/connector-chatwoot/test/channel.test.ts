@@ -152,6 +152,24 @@ describe("perform", () => {
 		]);
 	});
 
+	it("asks for the phone with a public message: Chatwoot has no share button", async () => {
+		const { channel, calls } = fakeChatwoot({
+			"POST /conversations/42/messages": { json: { id: 902 } },
+		});
+
+		await channel.perform({
+			...key,
+			type: "request_phone",
+			text: "¿Me pasás tu número?",
+		});
+
+		expect(calls[0]?.body).toEqual({
+			content: "¿Me pasás tu número?",
+			message_type: "outgoing",
+			private: false,
+		});
+	});
+
 	it("writes a note as a private message", async () => {
 		const { channel, calls } = fakeChatwoot({
 			"POST /conversations/42/messages": { json: { id: 901 } },

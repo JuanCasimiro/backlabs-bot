@@ -66,6 +66,7 @@ export function messageCreated(overrides: Record<string, unknown> = {}) {
 		conversation: {
 			id: 42,
 			inbox_id: 3,
+			channel: "Channel::Whatsapp",
 			status: "pending",
 			labels: [],
 			meta: { sender: { ...contact, type: "contact" } },

@@ -11,6 +11,12 @@ export const ContactSchema = z.object({
 	id: z.string().min(1),
 	name: z.string().optional(),
 	phone: z.string().optional(),
+	/**
+	 * True only when the channel itself proves the number belongs to the
+	 * customer (WhatsApp sender, a Telegram contact shared by its owner). A
+	 * number typed in a message is never verified. See ADR 0006.
+	 */
+	phoneVerified: z.boolean().optional(),
 	email: z.string().optional(),
 });
 export type Contact = z.infer<typeof ContactSchema>;

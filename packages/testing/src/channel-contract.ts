@@ -56,6 +56,23 @@ export function channelContract(
 				expect(message).toMatchObject({ author: "bot", private: true });
 			});
 
+			it("a phone request reaches the customer as a public message from the bot", async () => {
+				const { channel, conversationId } = await setup();
+				const text = `contract phone request ${randomUUID()}`;
+
+				await channel.perform({
+					type: "request_phone",
+					idempotencyKey: randomUUID(),
+					conversationId,
+					text,
+				});
+
+				const message = (await channel.history(conversationId)).find(
+					(m) => m.text === text,
+				);
+				expect(message).toMatchObject({ author: "bot", private: false });
+			});
+
 			it("history is oldest first", async () => {
 				const { channel, conversationId } = await setup();
 				for (const n of [1, 2]) {

@@ -42,7 +42,11 @@ export const MessageCreatedPayload = z.object({
 	event: z.literal("message_created"),
 	...MessageFields,
 	message_type: z.enum(["incoming", "outgoing", "activity", "template"]),
-	conversation: z.object({ id: z.number() }),
+	conversation: z.object({
+		id: z.number(),
+		/** Inbox channel type, e.g. "Channel::Whatsapp". */
+		channel: z.string().nullish(),
+	}),
 });
 export type MessageCreatedPayload = z.infer<typeof MessageCreatedPayload>;
 
