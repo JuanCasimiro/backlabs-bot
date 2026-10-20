@@ -39,8 +39,18 @@ Verified 2026-10-20: `tsc` and Biome clean, 93 tests passing against Postgres 16
 | RT-07 | Task queue (follow-ups) | Postgres table with leases and max attempts; scheduler emits "task due" into the inbox with a human-readable reason | idea |
 | RT-08 | Capabilities preamble | Enabled tool packs and integrations printed at boot and injected at session start | idea |
 | RT-11 | Memory trimming | Send the model only the last N turns (or a summary) of long conversations; today the whole thread goes | idea |
-| RT-12 | Attachment wait + cost | Wait briefly for attachments that arrive after the text; cost in currency in the run ledger | idea |
+| RT-12 | Smarter debounce | Wait longer when the burst has attachments (1 s + 1 s per attachment, up to 5 s, as Chatwoot's Captain does) and cap the total wait (e.g. 15 s), so a customer who keeps typing still gets an answer. Today: a fixed 2 s window with no cap | priorizado |
+| RT-13 | Images to the model | Attachments become image content blocks for multimodal models; connectors resolve a file to something the model can read (Telegram `getFile`, Chatwoot `data_url`). Today the model only sees `[attachment: image]` | idea |
+| RT-14 | Voice notes | A `Transcriber` port: voice notes become text before the run. Self-hosted Whisper by default (customer audio must not go to a third party without the client's consent) | idea |
+| RT-15 | Cost in the run ledger | Price per model → cost per run, next to tokens | idea |
 | RT-10 | Import boundaries in CI | `dependency-cruiser`: domain cannot import runtime, adapters or LangGraph | idea |
+
+### Developer experience
+
+| ID | Feature | What it does | Status |
+|---|---|---|---|
+| PG-01 | Playground | Local web page (`npm run playground` in a client repo) to chat as the customer and see, next to each answer, the active agent, tool calls with arguments and results, transfers, notes and handoffs; verified or unverified customer; reloads prompts on "new conversation". Spec: [`docs/specs/playground.md`](docs/specs/playground.md) | priorizado |
+| PG-02 | Save as eval | From the playground, save a conversation as an eval file for the client repo (needs EV-01) | idea |
 
 ### Connectors
 
@@ -111,3 +121,4 @@ Verified 2026-10-20: `tsc` and Biome clean, 93 tests passing against Postgres 16
 | 2026-10-20 | The runtime owns the bot/human mode of each conversation; direct channels send notes and handoffs to an operator chat; Telegram is the first direct channel (ADR 0007). |
 | 2026-10-20 | A failed run hands off to a human instead of retrying; a run interrupted by a new message is discarded and the next one forks from the last committed checkpoint (runtime spec). |
 | 2026-10-20 | Approval policy (RT-05) postponed: no tool in the first deployments writes to a system of record. |
+| 2026-10-20 | Compared with Chatwoot's Captain (v4.18 code): we keep the debounce (one model call per burst) and take its attachment-aware wait (RT-12); its vision and audio transcription become RT-13 / RT-14; its playground becomes PG-01. Captain itself is `enterprise/` and needs a paid plan in production. |
