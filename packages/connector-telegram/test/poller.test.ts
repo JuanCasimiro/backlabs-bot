@@ -69,4 +69,27 @@ describe("long polling", () => {
 			701,
 		]);
 	});
+
+	it("stops with the error when Telegram rejects the configuration", async () => {
+		const api = fakeTelegram({
+			getUpdates: [
+				{
+					ok: false,
+					error_code: 409,
+					description: "Conflict: webhook is active",
+				},
+			],
+		});
+
+		await expect(
+			pollTelegram({
+				token: "123:abc",
+				operatorChatId: OPERATOR_CHAT_ID,
+				fetch: api.fetch,
+				signal: new AbortController().signal,
+				onEvent: async () => {},
+				onError: () => {},
+			}),
+		).rejects.toMatchObject({ status: 409 });
+	});
 });

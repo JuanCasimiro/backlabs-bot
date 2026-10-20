@@ -1,7 +1,7 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import type { Event } from "@backlabs/core";
 import { z } from "zod";
-import { botApi } from "./api.ts";
+import { botApi, TelegramApiError } from "./api.ts";
 import { toEvent, Update, type UpdateOptions } from "./updates.ts";
 
 export type PollOptions = UpdateOptions & {
@@ -24,7 +24,8 @@ export type PollOptions = UpdateOptions & {
  * Receives updates with getUpdates, so a bot runs without a public URL.
  * Telegram drops updates below `offset`, so the offset only moves past an
  * update once the inbox has stored it: a crash redelivers, the inbox dedups.
- * Telegram refuses getUpdates while a webhook is set (deleteWebhook first).
+ * Telegram refuses getUpdates while a webhook is set (deleteWebhook first);
+ * that and an invalid token reject the promise instead of retrying forever.
  */
 export async function pollTelegram(options: PollOptions): Promise<void> {
 	const call = botApi(options);
@@ -55,6 +56,8 @@ export async function pollTelegram(options: PollOptions): Promise<void> {
 				offset = updateId(raw) + 1;
 			}
 		} catch (error) {
+			// A bad token or an active webhook will not fix itself: stop loudly.
+			if (error instanceof TelegramApiError && !error.retryable) throw error;
 			onError(error);
 			await sleep(options.retryDelayMs ?? 2_000, undefined, {
 				signal: options.signal,
