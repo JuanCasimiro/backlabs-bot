@@ -3,12 +3,10 @@
 Runs the agents of a Backlabs Bot deployment: inbox, per-conversation worker, LangGraph agent graph, outbox and dispatcher, all on one Postgres. Design in [`docs/specs/runtime-v1.md`](../../docs/specs/runtime-v1.md) and ADRs [0004](../../docs/adr/0004-transactional-inbox-outbox.md), [0006](../../docs/adr/0006-verified-identity-from-the-channel.md), [0007](../../docs/adr/0007-direct-channels-and-conversation-mode.md).
 
 ```ts
-import { createRuntime, migrate } from "@backlabs/runtime";
-import { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres";
+import { createPostgresCheckpointer, createRuntime, migrate } from "@backlabs/runtime";
 
 await migrate(pool);
-const checkpointer = new PostgresSaver(pool);
-await checkpointer.setup();
+const checkpointer = await createPostgresCheckpointer(pool);
 
 const runtime = createRuntime({
 	pool,

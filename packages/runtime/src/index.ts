@@ -1,3 +1,4 @@
+export { createPostgresCheckpointer } from "./checkpointer.ts";
 export { ConfigError, loadConfig } from "./config.ts";
 export type { ConversationMode } from "./conversations.ts";
 export { createDispatcher, type DispatcherOptions } from "./dispatcher.ts";

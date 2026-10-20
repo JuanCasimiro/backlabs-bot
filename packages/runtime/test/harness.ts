@@ -1,7 +1,10 @@
 import type { BotConfigInput, Event, Tool } from "@backlabs/core";
 import { InMemoryChannel } from "@backlabs/testing";
-import { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres";
-import { createRuntime, type Runtime } from "../src/index.ts";
+import {
+	createPostgresCheckpointer,
+	createRuntime,
+	type Runtime,
+} from "../src/index.ts";
 import type { ScriptStep } from "../src/testing.ts";
 import { ScriptedChatModel } from "../src/testing.ts";
 import type { TestDatabase } from "./support.ts";
@@ -23,10 +26,9 @@ export async function bot(
 ) {
 	const channel = new InMemoryChannel();
 	const model = new ScriptedChatModel(options.script ?? []);
-	const checkpointer = new PostgresSaver(db.pool, undefined, {
+	const checkpointer = await createPostgresCheckpointer(db.pool, {
 		schema: db.schema,
 	});
-	await checkpointer.setup();
 
 	const runtime: Runtime = createRuntime({
 		pool: db.pool,
