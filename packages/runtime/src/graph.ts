@@ -265,7 +265,7 @@ export function buildAgentGraph(options: {
 	 */
 	function waitForTeam() {
 		const answer = interrupt<WaitingFor, TeamAnswer>("team");
-		const id = `team_${answer.brief.id}`;
+		const id = teamToolCallId(answer.brief.id);
 		return {
 			messages: [
 				new AIMessage({
@@ -383,4 +383,12 @@ function contextOf(runConfig: RunnableConfig): ToolContext {
 
 function hasToolCalls(message: BaseMessage | undefined): boolean {
 	return Boolean((message as AIMessage | undefined)?.tool_calls?.length);
+}
+
+/**
+ * Providers only accept `[a-zA-Z0-9_-]` in a tool call id (Anthropic returns
+ * 400 otherwise). Message ids come from the channel and can carry anything.
+ */
+export function teamToolCallId(briefId: string): string {
+	return `team_${briefId.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
 }
