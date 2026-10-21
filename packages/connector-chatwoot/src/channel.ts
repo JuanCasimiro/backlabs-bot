@@ -114,8 +114,11 @@ export function chatwootChannel(options: ChatwootChannelOptions): ChannelPort {
 			switch (action.type) {
 				// Chatwoot has no "share your number" button; on WhatsApp the number
 				// is already verified, elsewhere the text is all we can send.
+				// A relay is never planned here (humans answer from the inbox), but
+				// if one is, the customer still gets the text.
 				case "request_phone":
 				case "reply":
+				case "relay":
 				case "note": {
 					const created = await write(
 						`${path}/messages`,

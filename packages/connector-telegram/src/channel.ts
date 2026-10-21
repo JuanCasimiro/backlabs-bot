@@ -1,11 +1,34 @@
 import type {
 	Action,
 	ActionResult,
+	Author,
 	ChannelPort,
 	Message,
 } from "@backlabs/core";
 import { z } from "zod";
-import { botApi } from "./api.ts";
+import { botApi, TelegramApiError } from "./api.ts";
+import { escapeHtml, operatorHeader } from "./operator-chat.ts";
+
+/**
+ * What operators read, as Telegram HTML. `{name}` placeholders are filled with
+ * escaped values. The first line of every operator message (the conversation
+ * id, which replies are routed by) is fixed and not part of these texts.
+ */
+export type OperatorTexts = {
+	/** Placeholders: `{id}`, `{team}` (" (name)" or empty), `{brief}`, `{resume}`. */
+	handoff: string;
+	/** Placeholder: `{text}`, the note itself. */
+	note: string;
+	/** Placeholder: `{error}`, what Telegram answered. */
+	deliveryFailed: string;
+};
+
+export const defaultOperatorTexts: OperatorTexts = {
+	handoff:
+		"Needs a human{team}. Reply to this message to answer the customer, or reply with <code>/{brief} …</code> to tell the bot what to answer. Send <code>/{resume} {id}</code> to give the conversation back to the bot.",
+	note: "{text}",
+	deliveryFailed: "Your reply did not reach the customer: {error}",
+};
 
 export type TelegramChannelOptions = {
 	token: string;
@@ -15,6 +38,10 @@ export type TelegramChannelOptions = {
 	shareButtonText: string;
 	/** Must match the inbound option. Default "resume". */
 	resumeCommand?: string;
+	/** Must match the inbound option. Default "bot". */
+	briefCommand?: string;
+	/** Operator chats are usually in the client's language. Defaults in English. */
+	texts?: Partial<OperatorTexts>;
 	fetch?: typeof fetch;
 	baseUrl?: string;
 };
@@ -23,20 +50,24 @@ const SentMessage = z.object({ message_id: z.number(), date: z.number() });
 
 /**
  * Telegram as a direct channel: there is no inbox behind it, so what humans
- * must see goes to an operator chat. `history` returns what this process sent;
- * the runtime keeps the conversation itself in its checkpoints.
+ * must see goes to an operator chat, and what they answer there is relayed
+ * through the bot. `history` returns what this process sent; the runtime
+ * keeps the conversation itself in its checkpoints.
  */
 export function telegramChannel(options: TelegramChannelOptions): ChannelPort {
 	const call = botApi(options);
-	const resume = options.resumeCommand ?? "resume";
+	const texts = { ...defaultOperatorTexts, ...options.texts };
+	const commands = {
+		resume: options.resumeCommand ?? "resume",
+		brief: options.briefCommand ?? "bot",
+	};
 	const sent = new Map<string, Message[]>();
 
 	async function send(
 		conversationId: string,
 		chatId: string | number,
 		body: Record<string, unknown>,
-		text: string,
-		isPrivate: boolean,
+		record: { text: string; author: Author; isPrivate: boolean },
 	): Promise<ActionResult> {
 		const message = await call(
 			"sendMessage",
@@ -47,26 +78,43 @@ export function telegramChannel(options: TelegramChannelOptions): ChannelPort {
 		const transcript = sent.get(conversationId) ?? [];
 		transcript.push({
 			id,
-			author: "bot",
-			text,
+			author: record.author,
+			text: record.text,
 			attachments: [],
-			private: isPrivate,
+			private: record.isPrivate,
 			sentAt: new Date().toISOString(),
 		});
 		sent.set(conversationId, transcript);
 		return { externalId: id };
 	}
 
-	const toOperators = (conversationId: string, html: string, text: string) =>
+	const toCustomer = (
+		conversationId: string,
+		body: Record<string, unknown> & { text: string },
+		author: Author = "bot",
+	) =>
+		send(conversationId, conversationId, body, {
+			text: body.text,
+			author,
+			isPrivate: false,
+		});
+
+	const toOperators = (
+		conversationId: string,
+		html: string,
+		text: string,
+		extra: Record<string, unknown> = {},
+	) =>
 		send(
 			conversationId,
 			options.operatorChatId,
-			{ text: html, parse_mode: "HTML" },
-			text,
-			true,
+			{ text: html, parse_mode: "HTML", ...extra },
+			{ text, author: "bot", isPrivate: true },
 		);
 
 	return {
+		direct: true,
+
 		async history(conversationId) {
 			return [...(sent.get(conversationId) ?? [])];
 		},
@@ -75,44 +123,60 @@ export function telegramChannel(options: TelegramChannelOptions): ChannelPort {
 			const id = action.conversationId;
 			switch (action.type) {
 				case "reply":
-					return send(
-						id,
-						id,
-						{ text: action.text, reply_markup: { remove_keyboard: true } },
-						action.text,
-						false,
-					);
+					return toCustomer(id, {
+						text: action.text,
+						reply_markup: { remove_keyboard: true },
+					});
 
 				case "request_phone":
-					return send(
-						id,
-						id,
-						{
-							text: action.text,
-							reply_markup: {
-								keyboard: [
-									[{ text: options.shareButtonText, request_contact: true }],
-								],
-								one_time_keyboard: true,
-								resize_keyboard: true,
-							},
+					return toCustomer(id, {
+						text: action.text,
+						reply_markup: {
+							keyboard: [
+								[{ text: options.shareButtonText, request_contact: true }],
+							],
+							one_time_keyboard: true,
+							resize_keyboard: true,
 						},
-						action.text,
-						false,
-					);
+					});
+
+				case "relay":
+					try {
+						return await toCustomer(id, { text: action.text }, "human");
+					} catch (error) {
+						// A retry may still deliver it: report only what will not.
+						if (error instanceof TelegramApiError && error.retryable) {
+							throw error;
+						}
+						await toOperators(
+							id,
+							operatorHeader("failed", id) +
+								fill(texts.deliveryFailed, { error: errorText(error) }),
+							"delivery failed",
+							{
+								reply_parameters: {
+									message_id: Number(action.sourceMessageId),
+									allow_sending_without_reply: true,
+								},
+							},
+						);
+						throw error;
+					}
 
 				case "note":
 					return toOperators(
 						id,
-						`📝 <b>${escapeHtml(id)}</b>\n${escapeHtml(action.text)}`,
+						operatorHeader("note", id) +
+							fill(texts.note, { text: action.text }),
 						action.text,
 					);
 
 				case "handoff": {
-					const team = action.team ? ` (${escapeHtml(action.team)})` : "";
+					const team = action.team ? ` (${action.team})` : "";
 					return toOperators(
 						id,
-						`🙋 <a href="tg://user?id=${escapeHtml(id)}">Conversation ${escapeHtml(id)}</a> needs a human${team}.\nAnswer from Telegram, then send <code>/${resume} ${escapeHtml(id)}</code> to give it back to the bot.`,
+						operatorHeader("handoff", id) +
+							fill(texts.handoff, { id, team, ...commands }),
 						`handoff${team}`,
 					);
 				}
@@ -128,9 +192,14 @@ export function telegramChannel(options: TelegramChannelOptions): ChannelPort {
 	};
 }
 
-function escapeHtml(text: string): string {
-	return text
-		.replaceAll("&", "&amp;")
-		.replaceAll("<", "&lt;")
-		.replaceAll(">", "&gt;");
+/** Replaces `{name}` with the escaped value; unknown placeholders stay. */
+function fill(template: string, values: Record<string, string>): string {
+	return template.replace(/\{(\w+)\}/g, (placeholder, name: string) => {
+		const value = values[name];
+		return value === undefined ? placeholder : escapeHtml(value);
+	});
+}
+
+function errorText(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
 }

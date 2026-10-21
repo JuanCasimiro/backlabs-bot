@@ -1,4 +1,4 @@
-import type { Action, BotConfig } from "@backlabs/core";
+import type { Action, BotConfig, Message } from "@backlabs/core";
 import type pg from "pg";
 import {
 	type ConversationRecord,
@@ -11,7 +11,7 @@ import { foldEvents } from "./fold.ts";
 import type { AgentGraph, Intent } from "./graph.ts";
 import { decideAccess, verifiedPhone } from "./identity.ts";
 import { hasEventsAfter, markProcessed, pendingEvents } from "./inbox.ts";
-import { errorMessage } from "./messages.ts";
+import { contentOf, errorMessage } from "./messages.ts";
 import { planActions } from "./outbox.ts";
 import { finishRun, type RunOutcome, startRun } from "./runs.ts";
 
@@ -25,6 +25,8 @@ export type WorkerOptions = {
 	debounceMs: number;
 	/** How long a worker owns a conversation before another may take it. */
 	leaseMs: number;
+	/** The channel has no inbox behind it (`ChannelPort.direct`, ADR 0007). */
+	direct: boolean;
 };
 
 type Commit = {
@@ -71,12 +73,36 @@ export function createWorker(options: WorkerOptions) {
 			...(folded.resetMemory ? { threadId: null, checkpointId: null } : {}),
 		};
 
+		// Planned first: they happened before anything the agent answers now.
+		const forOperators = options.direct
+			? folded.humanTurn.flatMap(toOperators)
+			: [];
+
 		if (
 			folded.mode === "human" ||
 			folded.messages.length === 0 ||
 			!folded.contact
 		) {
-			return commit({ conversation: next, upToSeq, runId: null, intents: [] });
+			if (forOperators.length === 0) {
+				return commit({
+					conversation: next,
+					upToSeq,
+					runId: null,
+					intents: [],
+				});
+			}
+			const runId = await startRun(pool, {
+				conversationId: conversation.id,
+				agent: null,
+				model: null,
+			});
+			return commit({
+				conversation: next,
+				upToSeq,
+				runId,
+				intents: forOperators,
+				outcome: { status: "SUCCEEDED" },
+			});
 		}
 
 		const access = decideAccess(config.access, folded.contact);
@@ -94,7 +120,7 @@ export function createWorker(options: WorkerOptions) {
 				conversation: next,
 				upToSeq,
 				runId,
-				intents: [intent],
+				intents: [...forOperators, intent],
 				outcome: { status: "SUCCEEDED" },
 			});
 		}
@@ -124,7 +150,7 @@ export function createWorker(options: WorkerOptions) {
 				conversation: { ...next, mode: "human" },
 				upToSeq,
 				runId,
-				intents: fallbackIntents(config, error),
+				intents: [...forOperators, ...fallbackIntents(config, error)],
 				outcome: { status: "FAILED", error: errorMessage(error) },
 			});
 		}
@@ -148,7 +174,7 @@ export function createWorker(options: WorkerOptions) {
 			},
 			upToSeq,
 			runId,
-			intents: result.intents,
+			intents: [...forOperators, ...result.intents],
 			outcome: {
 				status: "SUCCEEDED",
 				...(result.agent ? { agent: result.agent } : {}),
@@ -187,6 +213,20 @@ function toActions({ conversation, runId, intents }: Commit): Action[] {
 				idempotencyKey: `${runId}:${n}`,
 			}) as Action,
 	);
+}
+
+/**
+ * On a direct channel operators see the conversation only through the bot:
+ * customer messages reach them as notes they can reply to, and their own
+ * replies reach the customer as relays.
+ */
+function toOperators(message: Message): Intent[] {
+	if (message.author !== "human") {
+		return [{ type: "note", text: `💬 ${contentOf(message)}` }];
+	}
+	// Text only: an empty human message has nothing to relay.
+	if (!message.text) return [];
+	return [{ type: "relay", text: message.text, sourceMessageId: message.id }];
 }
 
 function fallbackIntents(config: BotConfig, error: unknown): Intent[] {

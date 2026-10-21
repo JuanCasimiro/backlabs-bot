@@ -100,3 +100,12 @@ export function humanReplied(text: string, conversationId = "conv-1"): Event {
 		message: customerMessage(text, { author: "human" }),
 	};
 }
+
+export function humanBriefed(text: string, conversationId = "conv-1"): Event {
+	return {
+		type: "human.briefed",
+		eventId: `brief-${randomUUID()}`,
+		conversationId,
+		message: customerMessage(text, { author: "human", private: true }),
+	};
+}

@@ -24,6 +24,17 @@ export const HumanRepliedSchema = z.object({
 	message: MessageSchema,
 });
 
+/**
+ * A human agent gave the bot facts to answer with, instead of answering
+ * themselves. The bot takes the conversation back keeping its memory; the
+ * customer never sees the brief. It never verifies the customer's identity.
+ */
+export const HumanBriefedSchema = z.object({
+	type: z.literal("human.briefed"),
+	...base,
+	message: MessageSchema,
+});
+
 export const ConversationResolvedSchema = z.object({
 	type: z.literal("conversation.resolved"),
 	...base,
@@ -32,6 +43,7 @@ export const ConversationResolvedSchema = z.object({
 export const EventSchema = z.discriminatedUnion("type", [
 	MessageReceivedSchema,
 	HumanRepliedSchema,
+	HumanBriefedSchema,
 	ConversationResolvedSchema,
 ]);
 export type Event = z.infer<typeof EventSchema>;

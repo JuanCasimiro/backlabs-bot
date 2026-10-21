@@ -20,12 +20,15 @@ export type ConversationState = {
  */
 export class InMemoryChannel implements ChannelPort {
 	readonly performed: Action[] = [];
+	readonly direct: boolean;
 	readonly #conversations = new Map<string, ConversationState>();
 	readonly #now: () => Date;
 	#nextId = 1;
 
-	constructor(options: { now?: () => Date } = {}) {
+	/** `direct`: behave like a channel with no inbox behind it (ADR 0007). */
+	constructor(options: { now?: () => Date; direct?: boolean } = {}) {
 		this.#now = options.now ?? (() => new Date());
+		this.direct = options.direct ?? false;
 	}
 
 	/** Adds messages to a conversation, creating it if needed. */
@@ -56,11 +59,12 @@ export class InMemoryChannel implements ChannelPort {
 		switch (action.type) {
 			case "request_phone":
 			case "reply":
+			case "relay":
 			case "note": {
 				const id = `mem-${this.#nextId++}`;
 				state.messages.push({
 					id,
-					author: "bot",
+					author: action.type === "relay" ? "human" : "bot",
 					text: action.text,
 					attachments: [],
 					private: action.type === "note",

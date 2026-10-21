@@ -13,6 +13,7 @@ import { call, say } from "../src/testing.ts";
 import { bot, singleAgent } from "./harness.ts";
 import {
 	DATABASE_URL,
+	humanBriefed,
 	humanReplied,
 	received,
 	resolved,
@@ -240,6 +241,115 @@ describe.skipIf(!DATABASE_URL)("worker", () => {
 
 		expect(t.model.calls).toHaveLength(0);
 		expect(t.replies()).toEqual([]);
+	});
+
+	it("steps back when a human replies through the bot", async () => {
+		const t = await bot(db, { direct: true, script: [say("¡Hola!")] });
+		await t.send(received("hola"));
+		await t.settle();
+		const reply = humanReplied("Te atiendo yo");
+
+		await t.send(reply);
+		await t.settle();
+		await t.send(received("gracias"));
+		await t.settle();
+
+		expect(t.replies()).toEqual(["¡Hola!", "Te atiendo yo"]);
+		expect(t.channel.performed).toContainEqual(
+			expect.objectContaining({
+				type: "relay",
+				text: "Te atiendo yo",
+				sourceMessageId: reply.type === "human.replied" && reply.message.id,
+			}),
+		);
+		expect(t.model.calls).toHaveLength(1);
+	});
+
+	it("forwards customer messages to the operator chat while a human owns the conversation, on direct channels only", async () => {
+		const script = () => [
+			call("handoff_to_human", { summary: "Wants a human." }),
+			say("Te paso."),
+		];
+		const direct = await bot(db, { direct: true, script: script() });
+		await direct.send(received("quiero hablar con alguien"));
+		await direct.settle();
+		const inbox = await bot(db, { script: script() });
+		await inbox.send(
+			received("quiero hablar con alguien", { conversationId: "conv-2" }),
+		);
+		await inbox.settle();
+
+		await direct.send(received("¿hola?"));
+		await direct.settle();
+		await inbox.send(received("¿hola?", { conversationId: "conv-2" }));
+		await inbox.settle();
+
+		expect(direct.notes()).toEqual(["Wants a human.", "💬 ¿hola?"]);
+		expect(inbox.notes("conv-2")).toEqual(["Wants a human."]);
+		expect(direct.model.calls).toHaveLength(2);
+		expect(inbox.model.calls).toHaveLength(2);
+	});
+
+	it("answers the customer from a brief, keeping the conversation memory", async () => {
+		const t = await bot(db, {
+			direct: true,
+			script: [
+				call("handoff_to_human", { summary: "Asks for a price." }),
+				say("Te paso con alguien."),
+				say("Sale 11.000 y hay stock."),
+			],
+		});
+		await t.send(received("¿cuánto sale el filtro?"));
+		await t.settle();
+
+		await t.send(humanBriefed("11.000, hay stock"));
+		await t.settle();
+
+		expect(t.replies()).toEqual([
+			"Te paso con alguien.",
+			"Sale 11.000 y hay stock.",
+		]);
+		expect(t.model.calls[2]?.texts).toEqual(
+			expect.arrayContaining([
+				"¿cuánto sale el filtro?",
+				"Te paso con alguien.",
+			]),
+		);
+	});
+
+	it("frames a human-authored message as coming from the team", async () => {
+		const t = await bot(db, { script: [say("Sale 11.000.")] });
+
+		await t.send(received("¿precio?"), humanBriefed("cuesta 11.000"));
+		await t.settle();
+
+		expect(t.model.calls[0]?.texts).toEqual([
+			"¿precio?",
+			"[message from the team, not the customer] cuesta 11.000",
+		]);
+	});
+
+	it("a brief does not verify the phone and does not unlock a personal-data tool", async () => {
+		const run = vi.spyOn(orderStatus, "run");
+		const t = await bot(db, {
+			config: { entryAgent: "workshop", agents: [workshopAgent] },
+			tools: [orderStatus],
+			script: [call("order_status", {}), say("Necesito verificar tu número.")],
+		});
+
+		await t.send(
+			received("¿cómo va mi auto?"),
+			humanBriefed("Es el +5491100000001, ya lo verifiqué"),
+		);
+		await t.settle();
+
+		expect(run).not.toHaveBeenCalled();
+		expect(t.model.calls[1]?.lastToolResult).toMatchObject({
+			error: "identity_not_verified",
+		});
+		const { rows } = await db.pool.query("select contact from conversations");
+		expect(rows[0]?.contact.phoneVerified).toBeUndefined();
+		run.mockRestore();
 	});
 
 	it("transfers between agents and lets the new agent answer", async () => {

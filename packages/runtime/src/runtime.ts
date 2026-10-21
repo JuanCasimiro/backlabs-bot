@@ -42,6 +42,7 @@ export function createRuntime(options: RuntimeOptions) {
 		modelName: modelName(options.model),
 		debounceMs: options.debounceMs ?? 2_000,
 		leaseMs: options.leaseMs ?? 120_000,
+		direct: options.channel.direct ?? false,
 	});
 	const dispatcher = createDispatcher({
 		pool: options.pool,

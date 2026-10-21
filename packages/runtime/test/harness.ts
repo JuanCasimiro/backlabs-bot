@@ -22,9 +22,11 @@ export async function bot(
 		config?: BotConfigInput;
 		tools?: Tool[];
 		debounceMs?: number;
+		/** A channel with no inbox behind it, like Telegram (ADR 0007). */
+		direct?: boolean;
 	} = {},
 ) {
-	const channel = new InMemoryChannel();
+	const channel = new InMemoryChannel({ direct: options.direct ?? false });
 	const model = new ScriptedChatModel(options.script ?? []);
 	const checkpointer = await createPostgresCheckpointer(db.pool, {
 		schema: db.schema,

@@ -9,6 +9,12 @@ export type ActionResult = {
 
 /** Outbound side of a channel: what the bot reads from and does to a conversation. */
 export interface ChannelPort {
+	/**
+	 * True when no human inbox sits behind the channel (ADR 0007): operators
+	 * see the conversation and answer it only through the bot. The runtime then
+	 * relays human replies and forwards customer messages to the operators.
+	 */
+	readonly direct?: boolean;
 	/** Recent messages of a conversation, oldest first. */
 	history(conversationId: string): Promise<Message[]>;
 	perform(action: Action): Promise<ActionResult>;

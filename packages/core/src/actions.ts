@@ -54,6 +54,19 @@ export const RequestPhoneSchema = z.object({
 	text: z.string().min(1),
 });
 
+/**
+ * Sends what a human wrote to the customer, verbatim. Only planned on direct
+ * channels, where operators answer through the bot (ADR 0007); on channels
+ * with an inbox the human's reply is already delivered.
+ */
+export const RelaySchema = z.object({
+	type: z.literal("relay"),
+	...base,
+	text: z.string().min(1),
+	/** The human's own message, so a failed delivery can be reported to it. */
+	sourceMessageId: z.string().min(1),
+});
+
 export const ResolveSchema = z.object({
 	type: z.literal("resolve"),
 	...base,
@@ -66,6 +79,7 @@ export const ActionSchema = z.discriminatedUnion("type", [
 	AddLabelsSchema,
 	SetAttributesSchema,
 	RequestPhoneSchema,
+	RelaySchema,
 	ResolveSchema,
 ]);
 export type Action = z.infer<typeof ActionSchema>;
