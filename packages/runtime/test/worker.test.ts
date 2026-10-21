@@ -9,7 +9,6 @@ import {
 	vi,
 } from "vitest";
 import { z } from "zod";
-import { FROM_THE_TEAM } from "../src/messages.ts";
 import { call, say } from "../src/testing.ts";
 import { bot, singleAgent } from "./harness.ts";
 import {
@@ -54,6 +53,12 @@ const workshop = {
 		workshopAgent,
 	],
 };
+
+/** The bot hands a price question off and tells the customer. */
+const askForPrice = () => [
+	call("handoff_to_human", { summary: "Asks for a price." }),
+	say("Te paso con alguien."),
+];
 
 describe.skipIf(!DATABASE_URL)("worker", () => {
 	let db: TestDatabase;
@@ -318,15 +323,234 @@ describe.skipIf(!DATABASE_URL)("worker", () => {
 		);
 	});
 
-	it("frames a human-authored message as coming from the team", async () => {
-		const t = await bot(db, { script: [say("Sale 11.000.")] });
+	it("a handoff leaves the thread waiting for the team", async () => {
+		const t = await bot(db, { script: askForPrice() });
 
-		await t.send(received("¿precio?"), humanBriefed("cuesta 11.000"));
+		await t.send(received("¿cuánto sale el filtro?"));
 		await t.settle();
 
-		expect(t.model.calls[0]?.texts).toEqual([
-			"¿precio?",
-			`${FROM_THE_TEAM} cuesta 11.000`,
+		const { rows } = await db.pool.query(
+			"select mode, thread_id, checkpoint_id from conversations",
+		);
+		const saved = await t.checkpointer.getTuple({
+			configurable: {
+				thread_id: rows[0]?.thread_id,
+				checkpoint_ns: "",
+				checkpoint_id: rows[0]?.checkpoint_id,
+			},
+		});
+		expect(rows[0]?.mode).toBe("human");
+		expect(saved?.pendingWrites?.map(([, channel]) => channel)).toContain(
+			"__interrupt__",
+		);
+		expect(t.notes()).toEqual(["Asks for a price."]);
+		expect(t.replies()).toEqual(["Te paso con alguien."]);
+	});
+
+	it("answers the customer from a brief as the handoff tool's result", async () => {
+		const t = await bot(db, {
+			direct: true,
+			script: [...askForPrice(), say("Sale 11 mil y hay stock.")],
+		});
+		await t.send(received("¿cuánto sale el filtro?"));
+		await t.settle();
+
+		await t.send(humanBriefed("sale 11 mil y hay stock"));
+		await t.settle();
+
+		expect(t.model.calls[2]?.lastToolResult).toBe(
+			"Answer from the team: sale 11 mil y hay stock",
+		);
+		expect(t.replies()).toEqual([
+			"Te paso con alguien.",
+			"Sale 11 mil y hay stock.",
+		]);
+		const { rows } = await db.pool.query("select mode from conversations");
+		expect(rows[0]?.mode).toBe("bot");
+	});
+
+	it("the model sees the brief as a tool result, not as a user turn", async () => {
+		const t = await bot(db, {
+			direct: true,
+			script: [...askForPrice(), say("Sale 11 mil.")],
+		});
+		await t.send(received("¿cuánto sale el filtro?"));
+		await t.settle();
+
+		await t.send(humanBriefed("sale 11 mil"));
+		await t.settle();
+
+		expect(t.model.calls[2]?.userTexts).toEqual(["¿cuánto sale el filtro?"]);
+		expect(t.model.calls[2]?.texts.join("\n")).not.toContain("11 mil");
+		expect(t.model.calls[2]?.lastToolResult).toBe(
+			"Answer from the team: sale 11 mil",
+		);
+	});
+
+	it("a brief after a resolution does not run the agent and tells the operators there is no pending handoff", async () => {
+		const t = await bot(db, { direct: true, script: askForPrice() });
+		await t.send(received("¿cuánto sale el filtro?"));
+		await t.settle();
+
+		await t.send(resolved(), humanBriefed("sale 11 mil"));
+		await t.settle();
+
+		expect(t.model.calls).toHaveLength(2);
+		expect(t.notes()).toEqual([
+			"Asks for a price.",
+			t.runtime.config.texts.briefWithoutHandoff,
+		]);
+		expect(t.replies()).toEqual(["Te paso con alguien."]);
+	});
+
+	it("a brief without any handoff does not run the agent and tells the operators there is no pending handoff", async () => {
+		const t = await bot(db, { direct: true, script: [say("¡Hola!")] });
+		await t.send(received("hola"));
+		await t.settle();
+
+		await t.send(humanBriefed("sale 11 mil"));
+		await t.settle();
+
+		expect(t.model.calls).toHaveLength(1);
+		expect(t.notes()).toEqual([t.runtime.config.texts.briefWithoutHandoff]);
+		expect(t.replies()).toEqual(["¡Hola!"]);
+		const { rows } = await db.pool.query("select mode from conversations");
+		expect(rows[0]?.mode).toBe("bot");
+	});
+
+	it("uses the deployment's text for the brief-without-handoff note", async () => {
+		const t = await bot(db, {
+			config: {
+				...singleAgent,
+				texts: { briefWithoutHandoff: "No hay nada pendiente acá." },
+			},
+		});
+
+		await t.send(humanBriefed("sale 11 mil"));
+		await t.settle();
+
+		expect(t.notes()).toEqual(["No hay nada pendiente acá."]);
+		expect(t.model.calls).toHaveLength(0);
+	});
+
+	it("customer messages sent while a human owned the conversation are in the thread when the bot answers", async () => {
+		const t = await bot(db, {
+			script: [...askForPrice(), say("Sale 11 mil.")],
+		});
+		await t.send(received("¿cuánto sale el filtro?"));
+		await t.settle();
+		await t.send(received("¿hola?"));
+		await t.settle();
+		await t.send(received("¿siguen ahí?"));
+		await t.settle();
+
+		await t.send(humanBriefed("sale 11 mil"));
+		await t.settle();
+
+		expect(t.model.calls).toHaveLength(3);
+		expect(t.model.calls[2]?.userTexts).toEqual([
+			"¿cuánto sale el filtro?",
+			"¿hola?",
+			"¿siguen ahí?",
+		]);
+	});
+
+	it("a human reply sent through the bot reaches the model as said by the business, not by the customer", async () => {
+		const t = await bot(db, {
+			direct: true,
+			script: [...askForPrice(), say("Sale 11 mil.")],
+		});
+		await t.send(received("¿cuánto sale el filtro?"));
+		await t.settle();
+		await t.send(humanReplied("Lo averiguo y te digo"));
+		await t.settle();
+
+		await t.send(humanBriefed("sale 11 mil"));
+		await t.settle();
+
+		expect(t.model.calls[2]?.texts).toEqual([
+			"¿cuánto sale el filtro?",
+			"Te paso con alguien.",
+			"Lo averiguo y te digo",
+		]);
+		expect(t.model.calls[2]?.userTexts).toEqual(["¿cuánto sale el filtro?"]);
+	});
+
+	it("a customer message while the thread is paused does not discard or restart the paused run", async () => {
+		const t = await bot(db, {
+			direct: true,
+			script: [...askForPrice(), say("Sale 11 mil.")],
+		});
+		await t.send(received("¿cuánto sale el filtro?"));
+		await t.settle();
+
+		await t.send(received("¿hola?"));
+		await t.settle();
+		await t.send(humanBriefed("sale 11 mil"));
+		await t.settle();
+
+		expect(t.model.calls).toHaveLength(3);
+		expect(t.model.calls[2]?.lastToolResult).toBe(
+			"Answer from the team: sale 11 mil",
+		);
+		expect(t.replies()).toEqual(["Te paso con alguien.", "Sale 11 mil."]);
+		expect(t.notes()).toEqual(["Asks for a price.", "💬 ¿hola?"]);
+		const { rows } = await db.pool.query("select status from runs");
+		expect(rows.map((r) => r.status)).not.toContain("CANCELLED");
+	});
+
+	it("a brief whose run is discarded resumes again from the pause", async () => {
+		let t: Awaited<ReturnType<typeof bot>>;
+		t = await bot(db, {
+			direct: true,
+			script: [
+				...askForPrice(),
+				async () => {
+					await t.send(received("¿y el de aire?"));
+					return say("Respuesta descartada.")();
+				},
+				say("Sale 11 mil; el de aire lo consulto."),
+			],
+		});
+		await t.send(received("¿cuánto sale el filtro?"));
+		await t.settle();
+
+		await t.send(humanBriefed("sale 11 mil"));
+		await t.settle();
+
+		expect(t.replies()).toEqual([
+			"Te paso con alguien.",
+			"Sale 11 mil; el de aire lo consulto.",
+		]);
+		expect(t.model.calls[3]?.lastToolResult).toBe(
+			"Answer from the team: sale 11 mil",
+		);
+		expect(t.model.calls[3]?.texts).toEqual([
+			"¿cuánto sale el filtro?",
+			"Te paso con alguien.",
+			"¿y el de aire?",
+		]);
+	});
+
+	it("a resolution discards the pending handoff and starts a fresh memory", async () => {
+		const t = await bot(db, {
+			direct: true,
+			script: [...askForPrice(), say("¡Hola de nuevo!")],
+		});
+		await t.send(received("¿cuánto sale el filtro?"));
+		await t.settle();
+
+		await t.send(resolved(), received("hola otra vez"));
+		await t.settle();
+		await t.send(humanBriefed("sale 11 mil"));
+		await t.settle();
+
+		expect(t.model.calls[2]?.texts).toEqual(["hola otra vez"]);
+		expect(t.model.calls[2]?.lastToolResult).toBeUndefined();
+		expect(t.model.calls).toHaveLength(3);
+		expect(t.notes()).toEqual([
+			"Asks for a price.",
+			t.runtime.config.texts.briefWithoutHandoff,
 		]);
 	});
 
@@ -335,17 +559,21 @@ describe.skipIf(!DATABASE_URL)("worker", () => {
 		const t = await bot(db, {
 			config: { entryAgent: "workshop", agents: [workshopAgent] },
 			tools: [orderStatus],
-			script: [call("order_status", {}), say("Necesito verificar tu número.")],
+			script: [
+				call("handoff_to_human", { summary: "Wants the order state." }),
+				say("Te paso con alguien."),
+				call("order_status", {}),
+				say("Necesito verificar tu número."),
+			],
 		});
+		await t.send(received("¿cómo va mi auto?"));
+		await t.settle();
 
-		await t.send(
-			received("¿cómo va mi auto?"),
-			humanBriefed("Es el +5491100000001, ya lo verifiqué"),
-		);
+		await t.send(humanBriefed("Es el +5491100000001, ya lo verifiqué"));
 		await t.settle();
 
 		expect(run).not.toHaveBeenCalled();
-		expect(t.model.calls[1]?.lastToolResult).toMatchObject({
+		expect(t.model.calls[3]?.lastToolResult).toMatchObject({
 			error: "identity_not_verified",
 		});
 		const { rows } = await db.pool.query("select contact from conversations");

@@ -1,24 +1,22 @@
 import type { Message } from "@backlabs/core";
-import { type BaseMessage, HumanMessage } from "@langchain/core/messages";
+import {
+	AIMessage,
+	type BaseMessage,
+	HumanMessage,
+} from "@langchain/core/messages";
 
 /**
- * Every message reaches the model as a user turn. A human-authored one (a
- * brief) is marked as coming from the team, so the model uses it to answer
- * the customer instead of answering it.
+ * A customer message is a user turn. A human-authored one (an operator's
+ * reply the customer received from the bot's account) is an assistant turn:
+ * to the conversation it is what the business said. Briefs never come
+ * through here: they are the result of the handoff (RT-15).
  */
 export function toModelMessage(message: Message): BaseMessage {
 	const content = contentOf(message);
-	return new HumanMessage({
-		id: message.id,
-		content:
-			message.author === "human" ? `${FROM_THE_TEAM} ${content}` : content,
-	});
+	return message.author === "human"
+		? new AIMessage({ id: message.id, content })
+		: new HumanMessage({ id: message.id, content });
 }
-
-// Strong on purpose: client prompts usually forbid inventing prices or stock,
-// and a brief must read as the opposite of inventing.
-export const FROM_THE_TEAM =
-	"[Message from your team, not from the customer. It is confirmed information from the business: use it to answer the customer now, without saying you cannot confirm it.]";
 
 /** Text plus a marker per attachment, never empty. */
 export function contentOf(message: Message): string {

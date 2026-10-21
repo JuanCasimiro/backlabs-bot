@@ -8,7 +8,7 @@ import type {
 } from "@backlabs/core";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import {
-	type AIMessage,
+	AIMessage,
 	type BaseMessage,
 	SystemMessage,
 	ToolMessage,
@@ -17,14 +17,21 @@ import type { RunnableConfig } from "@langchain/core/runnables";
 import {
 	Annotation,
 	type BaseCheckpointSaver,
+	Command,
 	END,
+	interrupt,
 	MessagesAnnotation,
 	START,
 	StateGraph,
 } from "@langchain/langgraph";
 import { runClientTool, systemPrompt, toolDefinitions } from "./agent-tools.ts";
-import { HANDOFF_TO_HUMAN, REQUEST_PHONE, TRANSFER_PREFIX } from "./config.ts";
-import { textOf, toModelMessage } from "./messages.ts";
+import {
+	ASK_TEAM,
+	HANDOFF_TO_HUMAN,
+	REQUEST_PHONE,
+	TRANSFER_PREFIX,
+} from "./config.ts";
+import { contentOf, textOf, toModelMessage } from "./messages.ts";
 
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown
 	? Omit<T, K>
@@ -44,6 +51,8 @@ type Turn = {
 	outputTokens: number;
 	/** A built-in ended the run (e.g. the phone request is the answer). */
 	stopped: boolean;
+	/** The agent handed off: the run pauses, waiting for the team (RT-15). */
+	handedOff: boolean;
 };
 type TurnUpdate = Partial<Turn> | { reset: true };
 
@@ -52,6 +61,7 @@ const emptyTurn = (): Turn => ({
 	inputTokens: 0,
 	outputTokens: 0,
 	stopped: false,
+	handedOff: false,
 });
 
 function mergeTurn(turn: Turn, update: TurnUpdate): Turn {
@@ -62,8 +72,12 @@ function mergeTurn(turn: Turn, update: TurnUpdate): Turn {
 		inputTokens: turn.inputTokens + (update.inputTokens ?? 0),
 		outputTokens: turn.outputTokens + (update.outputTokens ?? 0),
 		stopped: turn.stopped || (update.stopped ?? false),
+		handedOff: turn.handedOff || (update.handedOff ?? false),
 	};
 }
+
+/** A committed point of a conversation's thread. */
+export type ThreadPoint = { threadId: string; checkpointId: string };
 
 export type AgentRun = {
 	threadId: string;
@@ -73,9 +87,40 @@ export type AgentRun = {
 	context: ToolContext;
 };
 
-export type AgentRunResult = Omit<Turn, "stopped"> & { checkpointId: string };
+/**
+ * Resumes a thread waiting for the team. `between` happened while a human
+ * owned the conversation; `brief` is the team's answer; `messages` came
+ * after it.
+ */
+export type TeamAnswerRun = Omit<AgentRun, "checkpointId"> & {
+	checkpointId: string;
+	between: Message[];
+	brief: Message;
+};
 
-export type AgentGraph = { run(run: AgentRun): Promise<AgentRunResult> };
+/** What a paused thread waits for. Approvals (RT-05) will add theirs. */
+export type WaitingFor = "team";
+
+export type AgentRunResult = Omit<Turn, "stopped" | "handedOff"> & {
+	checkpointId: string;
+};
+
+export type AgentGraph = {
+	run(run: AgentRun): Promise<AgentRunResult>;
+	resumeWithTeamAnswer(run: TeamAnswerRun): Promise<AgentRunResult>;
+	/** What the thread waits for at this point, if it is paused. */
+	waitingFor(point: ThreadPoint): Promise<WaitingFor | null>;
+	/**
+	 * Appends messages to a paused thread without running anything, keeping
+	 * the pause. Returns the new checkpoint.
+	 */
+	append(point: ThreadPoint, messages: Message[]): Promise<string>;
+};
+
+/** Passed to `interrupt` and back through `Command({ resume })`. */
+type TeamAnswer = { brief: Message; messages: Message[] };
+
+const WAIT_FOR_TEAM = "wait_for_team";
 
 /** Tool-call rounds a single run may take before it is stopped as a loop. */
 const RECURSION_LIMIT = 24;
@@ -143,6 +188,7 @@ export function buildAgentGraph(options: {
 		const intents: Intent[] = [];
 		let activeAgent = state.activeAgent;
 		let stopped = false;
+		let handedOff = false;
 
 		for (const call of calls) {
 			const respond = (observation: unknown) =>
@@ -173,6 +219,7 @@ export function buildAgentGraph(options: {
 					type: "handoff",
 					...(agent.team ? { team: agent.team } : {}),
 				});
+				handedOff = true;
 				respond({
 					ok: true,
 					detail: "A human will take over. Tell the customer briefly.",
@@ -194,7 +241,7 @@ export function buildAgentGraph(options: {
 		return {
 			messages,
 			activeAgent,
-			turn: { intents, stopped },
+			turn: { intents, stopped, handedOff },
 		};
 	}
 
@@ -209,10 +256,37 @@ export function buildAgentGraph(options: {
 		return { turn: { intents: [intent] } };
 	}
 
+	/**
+	 * After a handoff the thread pauses here until the team answers. The
+	 * answer reaches the model as the result of a call to `ask_team` made on
+	 * the bot's behalf: models treat tool results as facts, and user turns as
+	 * the customer (RT-15). Writes nothing before the interrupt, since the
+	 * node runs again from the top on resume.
+	 */
+	function waitForTeam() {
+		const answer = interrupt<WaitingFor, TeamAnswer>("team");
+		const id = `team_${answer.brief.id}`;
+		return {
+			messages: [
+				new AIMessage({
+					content: "",
+					tool_calls: [{ id, name: ASK_TEAM, args: {}, type: "tool_call" }],
+				}),
+				new ToolMessage({
+					tool_call_id: id,
+					content: `Answer from the team: ${contentOf(answer.brief)}`,
+				}),
+				...answer.messages.map(toModelMessage),
+			],
+			turn: { reset: true } as TurnUpdate,
+		};
+	}
+
 	const graph = new StateGraph(State)
 		.addNode("agent", callAgent)
 		.addNode("tools", runTools)
 		.addNode("finish", finish)
+		.addNode(WAIT_FOR_TEAM, waitForTeam)
 		.addEdge(START, "agent")
 		.addConditionalEdges("agent", (state) =>
 			hasToolCalls(state.messages.at(-1)) ? "tools" : "finish",
@@ -220,30 +294,73 @@ export function buildAgentGraph(options: {
 		.addConditionalEdges("tools", (state) =>
 			state.turn.stopped ? END : "agent",
 		)
-		.addEdge("finish", END)
+		.addConditionalEdges("finish", (state) =>
+			state.turn.handedOff ? WAIT_FOR_TEAM : END,
+		)
+		.addEdge(WAIT_FOR_TEAM, "agent")
 		.compile({ checkpointer: options.checkpointer });
 
-	return {
-		async run(run) {
-			const thread = { thread_id: run.threadId };
-			const state = await graph.invoke(
-				{ messages: run.messages.map(toModelMessage), turn: { reset: true } },
-				{
-					configurable: {
-						...thread,
-						...(run.checkpointId ? { checkpoint_id: run.checkpointId } : {}),
-						toolContext: run.context,
-					},
-					recursionLimit: RECURSION_LIMIT,
-				},
-			);
-			const saved = await graph.getState({ configurable: thread });
-			const { stopped: _, ...turn } = state.turn;
-			return {
-				...turn,
-				checkpointId: String(saved.config.configurable?.checkpoint_id),
-			};
+	const at = (point: ThreadPoint) => ({
+		configurable: {
+			thread_id: point.threadId,
+			checkpoint_ns: "",
+			checkpoint_id: point.checkpointId,
 		},
+	});
+
+	async function append(point: ThreadPoint, messages: Message[]) {
+		// As if written by `finish`: the edge after it leads back to the pause.
+		const saved = await graph.updateState(
+			at(point),
+			{ messages: messages.map(toModelMessage) },
+			"finish",
+		);
+		return String(saved.configurable?.checkpoint_id);
+	}
+
+	async function invoke(
+		input: Parameters<typeof graph.invoke>[0],
+		run: Omit<AgentRun, "messages">,
+	): Promise<AgentRunResult> {
+		const thread = { thread_id: run.threadId };
+		const state = await graph.invoke(input, {
+			configurable: {
+				...thread,
+				...(run.checkpointId ? { checkpoint_id: run.checkpointId } : {}),
+				toolContext: run.context,
+			},
+			recursionLimit: RECURSION_LIMIT,
+		});
+		const saved = await graph.getState({ configurable: thread });
+		const { stopped: _, handedOff: __, ...turn } = state.turn;
+		return {
+			...turn,
+			checkpointId: String(saved.config.configurable?.checkpoint_id),
+		};
+	}
+
+	return {
+		run: (run) =>
+			invoke(
+				{ messages: run.messages.map(toModelMessage), turn: { reset: true } },
+				run,
+			),
+
+		async resumeWithTeamAnswer(run) {
+			// Always from a fresh checkpoint: LangGraph keeps the writes of a run
+			// on the checkpoint it resumed from and would replay them, so a
+			// discarded attempt (RT-02) must not resume from the same one.
+			const checkpointId = await append(run, run.between);
+			const answer: TeamAnswer = { brief: run.brief, messages: run.messages };
+			return invoke(new Command({ resume: answer }), { ...run, checkpointId });
+		},
+
+		async waitingFor(point) {
+			const state = await graph.getState(at(point));
+			return state.next.includes(WAIT_FOR_TEAM) ? "team" : null;
+		},
+
+		append,
 	};
 }
 

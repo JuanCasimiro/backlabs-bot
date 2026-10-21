@@ -8,7 +8,7 @@ import {
 } from "./conversations.ts";
 import { inTransaction } from "./db.ts";
 import { foldEvents } from "./fold.ts";
-import type { AgentGraph, Intent } from "./graph.ts";
+import type { AgentGraph, Intent, ThreadPoint } from "./graph.ts";
 import { decideAccess, verifiedPhone } from "./identity.ts";
 import { hasEventsAfter, markProcessed, pendingEvents } from "./inbox.ts";
 import { contentOf, errorMessage } from "./messages.ts";
@@ -62,9 +62,11 @@ export function createWorker(options: WorkerOptions) {
 	async function processConversation(conversation: ConversationRecord) {
 		const pending = await pendingEvents(pool, conversation.id);
 		const upToSeq = pending.at(-1)?.seq ?? 0;
+		const paused = await waitingForTeam(conversation);
 		const folded = foldEvents(
 			conversation,
 			pending.map((p) => p.event),
+			{ waitingForTeam: paused !== null },
 		);
 		const next: ConversationRecord = {
 			...conversation,
@@ -74,15 +76,25 @@ export function createWorker(options: WorkerOptions) {
 		};
 
 		// Planned first: they happened before anything the agent answers now.
-		const forOperators = options.direct
-			? folded.humanTurn.flatMap(toOperators)
-			: [];
+		const forOperators: Intent[] = [
+			...(options.direct ? folded.humanTurn.flatMap(toOperators) : []),
+			...folded.unusedBriefs.map(
+				(): Intent => ({
+					type: "note",
+					text: config.texts.briefWithoutHandoff,
+				}),
+			),
+		];
 
-		if (
-			folded.mode === "human" ||
-			folded.messages.length === 0 ||
-			!folded.contact
-		) {
+		const answering =
+			folded.mode === "bot" &&
+			(folded.brief !== null || folded.messages.length > 0);
+		if (!answering || !folded.contact) {
+			// RT-17: the paused thread records what happened while a human owned
+			// the conversation, so the agent sees it when the team answers.
+			if (paused && !folded.resetMemory && folded.humanTurn.length > 0) {
+				next.checkpointId = await graph.append(paused, folded.humanTurn);
+			}
 			if (forOperators.length === 0) {
 				return commit({
 					conversation: next,
@@ -132,19 +144,29 @@ export function createWorker(options: WorkerOptions) {
 		});
 		const threadId = next.threadId ?? runId;
 		const phone = verifiedPhone(folded.contact);
+		const context = {
+			conversationId: conversation.id,
+			contact: folded.contact,
+			...(phone ? { verifiedPhone: phone } : {}),
+		};
 
 		let result: Awaited<ReturnType<AgentGraph["run"]>>;
 		try {
-			result = await graph.run({
-				threadId,
-				checkpointId: next.checkpointId,
-				messages: folded.messages,
-				context: {
-					conversationId: conversation.id,
-					contact: folded.contact,
-					...(phone ? { verifiedPhone: phone } : {}),
-				},
-			});
+			result =
+				folded.brief && paused
+					? await graph.resumeWithTeamAnswer({
+							...paused,
+							between: folded.humanTurn,
+							brief: folded.brief,
+							messages: folded.messages,
+							context,
+						})
+					: await graph.run({
+							threadId,
+							checkpointId: next.checkpointId,
+							messages: folded.messages,
+							context,
+						});
 		} catch (error) {
 			return commit({
 				conversation: { ...next, mode: "human" },
@@ -157,7 +179,8 @@ export function createWorker(options: WorkerOptions) {
 
 		// The customer wrote again while the model was thinking: this answer is
 		// based on an incomplete conversation. Drop it; the next run starts again
-		// from the last committed checkpoint and sees everything.
+		// from the last committed checkpoint (a paused thread: from the pause)
+		// and sees everything.
 		if (await hasEventsAfter(pool, conversation.id, upToSeq)) {
 			await finishRun(pool, runId, { status: "CANCELLED" });
 			await releaseConversation(pool, conversation.id);
@@ -182,6 +205,21 @@ export function createWorker(options: WorkerOptions) {
 				outputTokens: result.outputTokens,
 			},
 		});
+	}
+
+	/**
+	 * The committed point of the conversation's thread if it waits for the
+	 * team. Asks the graph, so the pause has one source of truth. Only a
+	 * committed handoff pauses a thread, and it leaves the conversation in
+	 * `human` mode: other conversations skip the lookup.
+	 */
+	async function waitingForTeam(
+		conversation: ConversationRecord,
+	): Promise<ThreadPoint | null> {
+		const { mode, threadId, checkpointId } = conversation;
+		if (mode !== "human" || !threadId || !checkpointId) return null;
+		const point = { threadId, checkpointId };
+		return (await graph.waitingFor(point)) === "team" ? point : null;
 	}
 
 	/** Everything a run decided becomes durable together, or not at all. */

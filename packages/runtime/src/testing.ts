@@ -15,6 +15,8 @@ export type ScriptStep = (input?: {
 export type ScriptedCall = {
 	/** Customer and assistant texts, oldest first; no system or tool messages. */
 	texts: string[];
+	/** Texts of user turns only: what the model reads as said by the customer. */
+	userTexts: string[];
 	/** Names of the tools offered on this call. */
 	tools: string[];
 	/** The latest tool result, parsed from JSON. */
@@ -49,6 +51,10 @@ export class ScriptedChatModel extends BaseChatModel {
 		this.calls.push({
 			texts: messages
 				.filter((m) => m.type === "human" || m.type === "ai")
+				.map(textOf)
+				.filter(Boolean),
+			userTexts: messages
+				.filter((m) => m.type === "human")
 				.map(textOf)
 				.filter(Boolean),
 			tools: this.#tools,

@@ -13,6 +13,8 @@ export class ConfigError extends Error {
 export const HANDOFF_TO_HUMAN = "handoff_to_human";
 export const REQUEST_PHONE = "request_phone_verification";
 export const TRANSFER_PREFIX = "transfer_to_";
+/** Recorded on the bot's behalf when the team answers a handoff (RT-15). */
+export const ASK_TEAM = "ask_team";
 
 /**
  * Validates the client configuration against the tools it provides. Called at
@@ -48,6 +50,7 @@ function isBuiltIn(name: string): boolean {
 	return (
 		name === HANDOFF_TO_HUMAN ||
 		name === REQUEST_PHONE ||
+		name === ASK_TEAM ||
 		name.startsWith(TRANSFER_PREFIX)
 	);
 }

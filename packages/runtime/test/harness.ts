@@ -46,6 +46,7 @@ export async function bot(
 	return {
 		channel,
 		model,
+		checkpointer,
 		runtime,
 		async send(...events: Event[]) {
 			for (const event of events) await runtime.enqueue(event);
