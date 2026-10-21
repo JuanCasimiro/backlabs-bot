@@ -15,7 +15,10 @@ export function toModelMessage(message: Message): BaseMessage {
 	});
 }
 
-const FROM_THE_TEAM = "[message from the team, not the customer]";
+// Strong on purpose: client prompts usually forbid inventing prices or stock,
+// and a brief must read as the opposite of inventing.
+export const FROM_THE_TEAM =
+	"[Message from your team, not from the customer. It is confirmed information from the business: use it to answer the customer now, without saying you cannot confirm it.]";
 
 /** Text plus a marker per attachment, never empty. */
 export function contentOf(message: Message): string {

@@ -9,6 +9,7 @@ import {
 	vi,
 } from "vitest";
 import { z } from "zod";
+import { FROM_THE_TEAM } from "../src/messages.ts";
 import { call, say } from "../src/testing.ts";
 import { bot, singleAgent } from "./harness.ts";
 import {
@@ -325,7 +326,7 @@ describe.skipIf(!DATABASE_URL)("worker", () => {
 
 		expect(t.model.calls[0]?.texts).toEqual([
 			"¿precio?",
-			"[message from the team, not the customer] cuesta 11.000",
+			`${FROM_THE_TEAM} cuesta 11.000`,
 		]);
 	});
 
