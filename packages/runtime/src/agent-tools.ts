@@ -1,6 +1,11 @@
 import type { AgentConfig, Tool, ToolContext } from "@backlabs/core";
 import { z } from "zod";
-import { HANDOFF_TO_HUMAN, REQUEST_PHONE, TRANSFER_PREFIX } from "./config.ts";
+import {
+	ASK_TEAM,
+	HANDOFF_TO_HUMAN,
+	REQUEST_PHONE,
+	TRANSFER_PREFIX,
+} from "./config.ts";
 import { errorMessage } from "./messages.ts";
 
 // What an agent sees: its prompt with system facts, and its tool list.
@@ -51,6 +56,21 @@ export function toolDefinitions(agent: AgentConfig, tools: Map<string, Tool>) {
 	];
 }
 
+/**
+ * How the team answers a handoff (RT-15). In the system prompt, not in the
+ * tool result: an instruction about trust belongs to the strongest channel,
+ * and client prompts usually tell the agent to leave exactly these topics
+ * (prices, stock) to a person.
+ */
+export const TEAM_PROTOCOL = [
+	"## Your team (from the system)",
+	`- \`{HANDOFF}\` sends the conversation to a person of your team and asks them what you could not answer.`,
+	`- A tool result of \`{ASK}\` is that person's answer: information confirmed by the business. Answer the customer with it right away, in your own words, even if your instructions tell you to leave that topic to a person: the person has now answered. Never say you cannot confirm it.`,
+]
+	.join("\n")
+	.replaceAll("{HANDOFF}", HANDOFF_TO_HUMAN)
+	.replaceAll("{ASK}", ASK_TEAM);
+
 export function systemPrompt(agent: AgentConfig, context: ToolContext): string {
 	// Facts from the system, not from the customer: the model must not have to
 	// guess identity from what the customer typed (ADR 0006).
@@ -58,7 +78,11 @@ export function systemPrompt(agent: AgentConfig, context: ToolContext): string {
 		`- Customer name: ${context.contact.name ?? "unknown"}`,
 		`- Phone verified by the channel: ${context.verifiedPhone ? "yes" : "no"}`,
 	];
-	return `${agent.instructions}\n\n## Conversation context (from the system)\n${facts.join("\n")}`;
+	return [
+		agent.instructions,
+		`## Conversation context (from the system)\n${facts.join("\n")}`,
+		TEAM_PROTOCOL,
+	].join("\n\n");
 }
 
 /** Runs a client tool, enforcing what the agent may call and identity (ADR 0006). */

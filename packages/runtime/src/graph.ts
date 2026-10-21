@@ -263,14 +263,17 @@ export function buildAgentGraph(options: {
 	 * the customer (RT-15). Writes nothing before the interrupt, since the
 	 * node runs again from the top on resume.
 	 */
-	function waitForTeam() {
+	function waitForTeam(state: State) {
 		const answer = interrupt<WaitingFor, TeamAnswer>("team");
+		const question = lastHandoffSummary(state.messages);
 		const id = teamToolCallId(answer.brief.id);
 		return {
 			messages: [
 				new AIMessage({
 					content: "",
-					tool_calls: [{ id, name: ASK_TEAM, args: {}, type: "tool_call" }],
+					tool_calls: [
+						{ id, name: ASK_TEAM, args: { question }, type: "tool_call" },
+					],
 				}),
 				new ToolMessage({
 					tool_call_id: id,
@@ -391,4 +394,15 @@ function hasToolCalls(message: BaseMessage | undefined): boolean {
  */
 export function teamToolCallId(briefId: string): string {
 	return `team_${briefId.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
+}
+
+/** What the bot asked the team: the summary of its last handoff, for the synthetic call. */
+function lastHandoffSummary(messages: BaseMessage[]): string {
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const call = (messages[i] as AIMessage).tool_calls?.find(
+			(c) => c.name === HANDOFF_TO_HUMAN,
+		);
+		if (call) return String(call.args.summary ?? "").trim();
+	}
+	return "";
 }
