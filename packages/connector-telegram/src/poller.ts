@@ -1,11 +1,13 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import type { Event } from "@backlabs/core";
 import { z } from "zod";
-import { botApi, TelegramApiError } from "./api.ts";
+import { botApi, botIdFromToken, TelegramApiError } from "./api.ts";
 import { toEvent, Update, type UpdateOptions } from "./updates.ts";
 
-export type PollOptions = UpdateOptions & {
+export type PollOptions = Omit<UpdateOptions, "botId"> & {
 	token: string;
+	/** Default: read from the token. */
+	botId?: number;
 	signal: AbortSignal;
 	/** Store the event (the runtime's `enqueue`). Must be idempotent. */
 	onEvent: (event: Event) => Promise<unknown>;
@@ -29,6 +31,10 @@ export type PollOptions = UpdateOptions & {
  */
 export async function pollTelegram(options: PollOptions): Promise<void> {
 	const call = botApi(options);
+	const updateOptions: UpdateOptions = {
+		...options,
+		botId: options.botId ?? botIdFromToken(options.token),
+	};
 	const onError =
 		options.onError ?? ((error) => console.error("[telegram]", error));
 	let offset: number | undefined;
@@ -50,7 +56,7 @@ export async function pollTelegram(options: PollOptions): Promise<void> {
 				const update = Update.safeParse(raw);
 				// An update we cannot read is skipped, or it would block the queue.
 				if (update.success) {
-					const event = toEvent(update.data, options);
+					const event = toEvent(update.data, updateOptions);
 					if (event) await options.onEvent(event);
 				}
 				offset = updateId(raw) + 1;

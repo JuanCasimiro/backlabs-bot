@@ -1,4 +1,4 @@
-export { TelegramApiError } from "./api.ts";
+export { botIdFromToken, TelegramApiError } from "./api.ts";
 export {
 	defaultOperatorTexts,
 	type OperatorTexts,

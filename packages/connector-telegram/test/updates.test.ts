@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { telegramInbound } from "../src/index.ts";
 import {
+	BOT_ID,
 	botMessage,
 	CUSTOMER,
 	contactUpdate,
@@ -14,6 +15,7 @@ import {
 const SECRET = "hook-secret";
 const inbound = telegramInbound({
 	secretToken: SECRET,
+	botId: BOT_ID,
 	operatorChatId: OPERATOR_CHAT_ID,
 });
 
@@ -214,11 +216,22 @@ describe("operator chat", () => {
 
 	it("ignores operator messages that do not reply to a message of the bot", () => {
 		const toAPerson = operatorUpdate("Hola", {
-			reply_to_message: botMessage(NOTE_TEXT, { is_bot: false }),
+			reply_to_message: botMessage(NOTE_TEXT, { id: 2002, is_bot: false }),
 		});
 		const brief = operatorUpdate("/bot cuesta 11.000");
 
 		expect([eventOf(toAPerson), eventOf(brief)]).toEqual([null, null]);
+	});
+
+	it("ignores a reply to another bot's message, even with a forged header", () => {
+		const update = operatorUpdate("/bot cuesta 11.000", {
+			reply_to_message: botMessage(HANDOFF_TEXT, {
+				id: BOT_ID + 1,
+				is_bot: true,
+			}),
+		});
+
+		expect(eventOf(update)).toBeNull();
 	});
 
 	it("ignores a reply to a bot message that carries no conversation id", () => {
@@ -240,6 +253,7 @@ describe("operator chat", () => {
 	it("uses the configured brief command", () => {
 		const custom = telegramInbound({
 			secretToken: SECRET,
+			botId: BOT_ID,
 			operatorChatId: OPERATOR_CHAT_ID,
 			briefCommand: "decile",
 		});

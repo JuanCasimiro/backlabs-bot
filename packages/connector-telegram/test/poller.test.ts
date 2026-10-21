@@ -1,6 +1,6 @@
 import type { Event } from "@backlabs/core";
 import { describe, expect, it } from "vitest";
-import { pollTelegram } from "../src/index.ts";
+import { botIdFromToken, pollTelegram } from "../src/index.ts";
 import { fakeTelegram, OPERATOR_CHAT_ID, textUpdate } from "./fixtures.ts";
 
 describe("long polling", () => {
@@ -91,5 +91,15 @@ describe("long polling", () => {
 				onError: () => {},
 			}),
 		).rejects.toMatchObject({ status: 409 });
+	});
+});
+
+describe("bot id", () => {
+	it("reads the bot id from the token", () => {
+		expect(botIdFromToken("123:abc")).toBe(123);
+	});
+
+	it("refuses a token without the bot id", () => {
+		expect(() => botIdFromToken("abc")).toThrow(/bot id/);
 	});
 });

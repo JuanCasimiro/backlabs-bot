@@ -49,6 +49,13 @@ export const Update = z.object({
 export type Update = z.infer<typeof Update>;
 
 export type UpdateOptions = {
+	/**
+	 * This bot's user id: the number before the colon in the token
+	 * (`botIdFromToken`). A reply in the operator chat is routed only when it
+	 * answers a message this bot posted; another bot in the group could
+	 * otherwise forge a header and have replies sent to any Telegram user.
+	 */
+	botId: number;
 	/** Chat where operators receive notes and handoffs (ADR 0007). */
 	operatorChatId: number;
 	/** Command an operator sends to give a conversation back. Default "resume". */
@@ -121,7 +128,7 @@ function fromOperators(
 	}
 
 	const replied = message.reply_to_message;
-	if (!replied?.from?.is_bot) return null;
+	if (!replied?.from?.is_bot || replied.from.id !== options.botId) return null;
 	const conversationId = conversationIdOf(replied.text);
 	if (!conversationId) return null;
 

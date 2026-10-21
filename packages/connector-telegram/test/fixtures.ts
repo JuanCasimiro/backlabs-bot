@@ -6,6 +6,8 @@ export const CUSTOMER = {
 	last_name: "Gómez",
 };
 export const OPERATOR_CHAT_ID = -5001;
+/** This bot's user id (the number before the colon in its token). */
+export const BOT_ID = 9000;
 
 export function textUpdate(
 	text: string,
@@ -51,12 +53,15 @@ export function operatorUpdate(
  * A message the bot posted to the operator chat, as Telegram gives it back in
  * `reply_to_message`: plain text, HTML already turned into entities.
  */
-export function botMessage(text: string, from = { is_bot: true }) {
+export function botMessage(
+	text: string,
+	from: { id?: number; is_bot?: boolean } = { is_bot: true },
+) {
 	return {
 		message_id: 30,
 		date: 1_760_961_650,
 		chat: { id: OPERATOR_CHAT_ID, type: "group", title: "Operators" },
-		from: { id: 9000, first_name: "Bot", ...from },
+		from: { id: BOT_ID, first_name: "Bot", ...from },
 		text,
 	};
 }

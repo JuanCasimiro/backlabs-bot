@@ -1,5 +1,14 @@
 import { z } from "zod";
 
+/** The bot's user id is the number before the colon in its token. */
+export function botIdFromToken(token: string): number {
+	const id = Number(/^(\d+):/.exec(token)?.[1]);
+	if (!Number.isInteger(id) || id <= 0) {
+		throw new Error("Telegram token must look like <bot id>:<secret>");
+	}
+	return id;
+}
+
 export class TelegramApiError extends Error {
 	override name = "TelegramApiError";
 	readonly status: number;

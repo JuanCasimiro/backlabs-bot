@@ -16,7 +16,7 @@ Connects Backlabs Bot to a Telegram bot. Telegram is a **direct channel** (ADR 0
 
 ## Operator chat
 
-Every message the bot posts there starts with a fixed line: a mark and the conversation id (`📝 <id>` note, `🙋 <id>` handoff, `⚠️ <id>` failed delivery). Replies are routed by reading that line back, so nothing is stored.
+Every message the bot posts there starts with a fixed line: a mark and the conversation id (`📝 <id>` note, `🙋 <id>` handoff, `⚠️ <id>` failed delivery). Replies are routed by reading that line back, so nothing is stored. Only replies to messages **this bot** posted count (`botId`, read from the token): another bot in the group cannot forge a header and have operators' replies sent to an arbitrary user.
 
 | Operator sends | Backlabs | What happens |
 |---|---|---|
