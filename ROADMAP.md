@@ -26,13 +26,16 @@ Source of truth for scope, IDs and decisions. Update it in the same commit as th
 | TG-01 | Telegram connector: long polling and webhook, own-contact sharing verifies the phone, operator chat for notes and handoffs, `/resume` (ADR 0007) | `packages/connector-telegram` |
 | TEST-02 | `ScriptedChatModel` + `say` / `call` for deterministic runtime tests | `packages/runtime/src/testing.ts` |
 | DOC-02 | ADR 0006–0007, runtime spec, repo skills (`sdd`, `tdd`, `clean-code`, `new-connector`, `agent-eval`) | `docs/`, `.claude/skills/` |
-| RT-13 | `human.briefed` event (core): back to `bot` mode keeping memory, the brief enters the thread; human-authored messages reach the model framed as from the team; a brief never verifies a phone | `packages/core/src/events.ts`, `packages/runtime/src/fold.ts`, `messages.ts` |
+| RT-13 | `human.briefed` event (core): back to `bot` mode keeping memory; a brief never verifies a phone. Its user-turn framing (`FROM_THE_TEAM`) was replaced by RT-15 | `packages/core/src/events.ts`, `packages/runtime/src/fold.ts` |
 | RT-14 | On direct channels (`ChannelPort.direct`), customer messages while a human owns the conversation go to the operator chat as notes; human replies are relayed to the customer (`relay` action) | `packages/core/src/ports.ts`, `actions.ts`, `packages/runtime/src/worker.ts` |
 | TG-02 | Telegram: a plain reply to a note or handoff in the operator chat becomes `human.replied` and is relayed verbatim; a delivery that will not succeed is reported as a reply to the operator's message | `packages/connector-telegram/src/updates.ts`, `channel.ts`, `operator-chat.ts` |
 | TG-03 | Telegram: `/bot <facts>` as a reply becomes `human.briefed` (command configurable, `briefCommand`) | `packages/connector-telegram/src/updates.ts` |
 | TG-04 | Telegram: handoff names both ways to answer and `/resume`; operator texts configurable (`texts`), fixed first line with the conversation id | `packages/connector-telegram/src/channel.ts` |
+| RT-15 | A handoff pauses the graph (`interrupt()` in `wait_for_team`, after the agent tells the customer); `human.briefed` resumes it and the brief reaches the model as a tool result (`Answer from the team: …`), not a user turn. The worker asks the graph whether a thread is paused | `packages/runtime/src/graph.ts`, `worker.ts`, `fold.ts` |
+| RT-16 | A brief with no pending handoff runs no agent and leaves a note for the operators (`BotConfig.texts.briefWithoutHandoff`, English default) | `packages/core/src/agents.ts`, `packages/runtime/src/worker.ts` |
+| RT-17 | Customer messages (user turns) and human replies (assistant turns) received while a human owns the conversation are appended to the paused thread on arrival, without a run | `packages/runtime/src/graph.ts`, `worker.ts`, `messages.ts` |
 
-Verified 2026-10-21: `tsc` and Biome clean, 122 tests passing against Postgres (5 skipped: contract against a live Chatwoot, needs `CHATWOOT_CONTRACT_*`).
+Verified 2026-10-21: `tsc` and Biome clean, 132 tests passing against Postgres (5 skipped: contract against a live Chatwoot, needs `CHATWOOT_CONTRACT_*`).
 
 ## 🔜 Backlog
 
@@ -40,10 +43,7 @@ Verified 2026-10-21: `tsc` and Biome clean, 122 tests passing against Postgres (
 
 | ID | Feature | What it does | Status |
 |---|---|---|---|
-| RT-15 | Brief as the handoff's tool result | `handoff_to_human` interrupts the graph; `human.briefed` resumes it with the brief as the tool result. Replaces the user-turn framing of RT-13 | priorizado — spec `docs/specs/brief-as-tool-result.md` |
-| RT-16 | Brief without a pending handoff | No agent run; a note to the operators (`config.texts.briefWithoutHandoff`) | priorizado — same spec |
-| RT-17 | Human-owned turns enter the paused thread | Customer messages as customer turns, human relays as assistant turns, appended on arrival; the resumed agent sees them | priorizado — same spec |
-| RT-05 | Approval policy | Per tool: `auto` / `approval` (`interrupt()`, request as private note, resume on decision) / `denied-unattended`. Decisions about people default to `approval` | priorizado |
+| RT-05 | Approval policy | Per tool: `auto` / `approval` (`interrupt()`, request as private note, resume on decision) / `denied-unattended`. Decisions about people default to `approval`. Reuse the pause plumbing of RT-15 (`waitingFor`, `append`, resume from a fresh checkpoint) | priorizado |
 | RT-07 | Task queue (follow-ups) | Postgres table with leases and max attempts; scheduler emits "task due" into the inbox with a human-readable reason | idea |
 | RT-08 | Capabilities preamble | Enabled tool packs and integrations printed at boot and injected at session start | idea |
 | RT-11 | Memory trimming | Send the model only the last N turns (or a summary) of long conversations; today the whole thread goes | idea |

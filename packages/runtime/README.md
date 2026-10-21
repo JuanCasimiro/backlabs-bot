@@ -38,6 +38,12 @@ await runtime.start({ signal });       // worker + dispatcher loops
 
 A final answer becomes a `reply`, or a private `note` for `mode: "copilot"` agents.
 
+## Handoffs and briefs
+
+After `handoff_to_human` the agent tells the customer, the conversation switches to `human` mode and the thread **pauses, waiting for the team**. While a human owns the conversation, customer messages and human replies are appended to the paused thread (customer messages as user turns, human replies as assistant turns, since the customer got them from the bot's account); nothing runs.
+
+A `human.briefed` event is the team's answer: it resumes the paused thread, the brief reaches the model as a tool result (`Answer from the team: …`), and the agent answers the customer with everything that happened in between in view. A tool result reads as confirmed fact; a user turn would read as the customer. A brief with no pending handoff (none was made, or `conversation.resolved` started a fresh memory) runs nothing: the operators get a note with `texts.briefWithoutHandoff`. A brief never verifies the customer's phone.
+
 ## Identity (ADR 0006)
 
 A tool with `requires: "verified_phone"` is only called when the channel proved the customer's number. It receives it in `context.verifiedPhone`, never as a model argument. With `access.allowedPhones`, everyone else gets `verifyText` or `deniedText` without a model call.
@@ -46,7 +52,7 @@ A tool with `requires: "verified_phone"` is only called when the channel proved 
 
 - The same event delivered twice is processed once.
 - One run per conversation at a time (lease + `FOR UPDATE SKIP LOCKED`), after a debounce window.
-- A run is discarded when a message arrives during it; the next one starts again from the last committed checkpoint.
+- A run is discarded when a message arrives during it; the next one starts again from the last committed checkpoint (for a paused thread, the pause).
 - Actions and "events processed" are committed together. The dispatcher performs them in order per conversation, retries `retryable` errors with exponential backoff, and is at least once towards the channel.
 - A failed run hands the conversation to a human with a note (and `fallbackText` to the customer, if set).
 

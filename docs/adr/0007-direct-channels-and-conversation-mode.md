@@ -24,3 +24,7 @@ Two things must not depend on the inbox: knowing whether the bot or a human owns
 ## Note (2026-10-21): operators answer through the bot
 
 `docs/specs/operator-replies.md`. A channel declares itself direct with `ChannelPort.direct`. On direct channels the runtime plans a `relay` action for each `human.replied` (the operator's reply reaches the customer verbatim) and forwards customer messages received in `human` mode to the operator chat as notes. A new event, `human.briefed`, gives the conversation back to the bot **keeping** its memory, with the operator's facts as the next turn; `conversation.resolved` still starts a fresh memory. A brief never verifies identity (ADR 0006).
+
+## Note (2026-10-21): a brief answers the paused handoff
+
+`docs/specs/brief-as-tool-result.md`. A handoff now pauses the agent's thread; `human.briefed` resumes it and the brief reaches the model as a tool result, not as the next user turn. While the conversation is `human`, what the customer and the humans say is appended to the paused thread. A brief with nothing pending does not hand the conversation back: it stays `human` (or `bot`) and the operators get a note. `conversation.resolved` discards the pause with the old memory.
