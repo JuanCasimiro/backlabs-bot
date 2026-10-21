@@ -40,6 +40,9 @@ Verified 2026-10-21: `tsc` and Biome clean, 122 tests passing against Postgres (
 
 | ID | Feature | What it does | Status |
 |---|---|---|---|
+| RT-15 | Brief as the handoff's tool result | `handoff_to_human` interrupts the graph; `human.briefed` resumes it with the brief as the tool result. Replaces the user-turn framing of RT-13 | priorizado — spec `docs/specs/brief-as-tool-result.md` |
+| RT-16 | Brief without a pending handoff | No agent run; a note to the operators (`config.texts.briefWithoutHandoff`) | priorizado — same spec |
+| RT-17 | Human-owned turns enter the paused thread | Customer messages as customer turns, human relays as assistant turns, appended on arrival; the resumed agent sees them | priorizado — same spec |
 | RT-05 | Approval policy | Per tool: `auto` / `approval` (`interrupt()`, request as private note, resume on decision) / `denied-unattended`. Decisions about people default to `approval` | priorizado |
 | RT-07 | Task queue (follow-ups) | Postgres table with leases and max attempts; scheduler emits "task due" into the inbox with a human-readable reason | idea |
 | RT-08 | Capabilities preamble | Enabled tool packs and integrations printed at boot and injected at session start | idea |
@@ -118,3 +121,4 @@ Verified 2026-10-21: `tsc` and Biome clean, 122 tests passing against Postgres (
 | 2026-10-20 | Approval policy (RT-05) postponed: no tool in the first deployments writes to a system of record. |
 | 2026-10-21 | Operators on direct channels answer through the bot, two ways: a reply to the handoff is relayed verbatim (`human.replied`); `/bot <facts>` briefs the bot, which answers keeping its memory (`human.briefed`, new event). The event is generic (core); this increment implements it on Telegram only, where there is no inbox. Chatwoot brief (CW-04) later. "Answer from Telegram" is not viable: no chat by numeric id. While a human owns the conversation, customer messages are forwarded to the operator chat. Spec `docs/specs/operator-replies.md`. |
 | 2026-10-21 | A channel declares itself direct with `ChannelPort.direct` (the channel knows, so a deployment cannot misconfigure it). On direct channels the runtime plans a `relay` action for each human reply and a note for each customer message received in `human` mode. Operator messages on Telegram start with a fixed line carrying the conversation id; replies are routed by it, nothing stored. Spec `docs/specs/operator-replies.md`. |
+| 2026-10-21 | A brief is the team's answer to the handoff: `handoff_to_human` pauses the graph and the brief resumes it as that tool's result. The user-turn framing (RT-13, `FROM_THE_TEAM`) is dropped: the model read it as the customer claiming a price and refused it. Same pause/resume plumbing as RT-05. Spec `docs/specs/brief-as-tool-result.md`. |
