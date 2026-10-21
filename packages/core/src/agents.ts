@@ -68,6 +68,21 @@ export const AccessPolicySchema = z.object({
 });
 export type AccessPolicy = z.infer<typeof AccessPolicySchema>;
 
+/** Texts the runtime writes on its own, for operators. Defaults in English. */
+export const BotTextsSchema = z.object({
+	/**
+	 * Note to the operators when a brief arrives and the bot has no pending
+	 * handoff to answer with it (it never handed off, or the conversation was
+	 * resolved since).
+	 */
+	briefWithoutHandoff: z
+		.string()
+		.min(1)
+		.default(
+			"This brief was not used: the bot has no pending handoff in this conversation (it did not hand it off, or it was resolved since). Answer the customer yourself.",
+		),
+});
+
 export const BotConfigSchema = z
 	.object({
 		agents: z.array(AgentConfigSchema).min(1),
@@ -78,6 +93,7 @@ export const BotConfigSchema = z
 		 * silence is explained. Omitted: the customer gets nothing.
 		 */
 		fallbackText: z.string().min(1).optional(),
+		texts: BotTextsSchema.prefault({}),
 	})
 	.superRefine((config, ctx) => {
 		const names = new Set(config.agents.map((a) => a.name));
