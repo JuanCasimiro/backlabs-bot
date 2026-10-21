@@ -39,6 +39,8 @@ Verified 2026-10-20: `tsc` and Biome clean, 93 tests passing against Postgres 16
 | RT-07 | Task queue (follow-ups) | Postgres table with leases and max attempts; scheduler emits "task due" into the inbox with a human-readable reason | idea |
 | RT-08 | Capabilities preamble | Enabled tool packs and integrations printed at boot and injected at session start | idea |
 | RT-11 | Memory trimming | Send the model only the last N turns (or a summary) of long conversations; today the whole thread goes | idea |
+| RT-13 | `human.briefed` event | Back to `bot` mode keeping memory; the brief enters the thread; human-authored messages framed as from the team; never verifies a phone | priorizado — spec `docs/specs/operator-replies.md` |
+| RT-14 | Customer messages while a human owns the conversation | On direct channels, forwarded to the operator chat as a note with the conversation id, so the operator can reply to it | priorizado — same spec |
 | RT-12 | Attachment wait + cost | Wait briefly for attachments that arrive after the text; cost in currency in the run ledger | idea |
 | RT-10 | Import boundaries in CI | `dependency-cruiser`: domain cannot import runtime, adapters or LangGraph | idea |
 
@@ -46,7 +48,10 @@ Verified 2026-10-20: `tsc` and Biome clean, 93 tests passing against Postgres 16
 
 | ID | Feature | Status |
 |---|---|---|
-| TG-02 | Telegram: relay operator replies to the customer through the bot (today humans answer from their own account) | idea |
+| CW-04 | Chatwoot: a private note `/bot <facts>` briefs the bot, which answers the customer itself (`human.briefed`); other private notes stay ignored | idea — after TG-03; on Chatwoot humans answer from the inbox |
+| TG-02 | Telegram: an operator answers the customer by replying to the handoff or note in the operator chat; relayed verbatim, `human.replied` | priorizado — spec `docs/specs/operator-replies.md` |
+| TG-03 | Telegram: `/bot <facts>` as a reply briefs the bot, which answers the customer itself (`human.briefed`) | priorizado — same spec |
+| TG-04 | Telegram: handoff text names both ways to answer; operator-chat texts configurable (client language) | priorizado — same spec |
 | WA-01 | WhatsApp Cloud API direct connector (today WhatsApp arrives through Chatwoot) | idea |
 
 ### Tools (`packages/tools-*`)
@@ -111,3 +116,4 @@ Verified 2026-10-20: `tsc` and Biome clean, 93 tests passing against Postgres 16
 | 2026-10-20 | The runtime owns the bot/human mode of each conversation; direct channels send notes and handoffs to an operator chat; Telegram is the first direct channel (ADR 0007). |
 | 2026-10-20 | A failed run hands off to a human instead of retrying; a run interrupted by a new message is discarded and the next one forks from the last committed checkpoint (runtime spec). |
 | 2026-10-20 | Approval policy (RT-05) postponed: no tool in the first deployments writes to a system of record. |
+| 2026-10-21 | Operators on direct channels answer through the bot, two ways: a reply to the handoff is relayed verbatim (`human.replied`); `/bot <facts>` briefs the bot, which answers keeping its memory (`human.briefed`, new event). The event is generic (core); this increment implements it on Telegram only, where there is no inbox. Chatwoot brief (CW-04) later. "Answer from Telegram" is not viable: no chat by numeric id. While a human owns the conversation, customer messages are forwarded to the operator chat. Spec `docs/specs/operator-replies.md`. |
