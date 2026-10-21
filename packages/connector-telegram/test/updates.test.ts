@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { telegramInbound } from "../src/index.ts";
 import {
+	botMessage,
 	CUSTOMER,
 	contactUpdate,
+	HANDOFF_TEXT,
+	NOTE_TEXT,
 	OPERATOR_CHAT_ID,
 	operatorUpdate,
 	textUpdate,
@@ -155,5 +158,106 @@ describe("operator chat", () => {
 
 	it("ignores other operator messages", () => {
 		expect(eventOf(operatorUpdate("lo atiendo yo"))).toBeNull();
+	});
+
+	it("turns a plain reply to a handoff message into `human.replied` for that conversation", () => {
+		const update = operatorUpdate("Hola Ana, te atiendo yo", {
+			reply_to_message: botMessage(HANDOFF_TEXT),
+		});
+
+		expect(eventOf(update)).toEqual({
+			type: "human.replied",
+			eventId: "telegram:update:701",
+			conversationId: "1001",
+			message: {
+				id: "40",
+				author: "human",
+				text: "Hola Ana, te atiendo yo",
+				attachments: [],
+				private: false,
+				sentAt: "2025-10-20T12:01:40.000Z",
+			},
+		});
+	});
+
+	it("turns a plain reply to a note into `human.replied` for that conversation", () => {
+		const update = operatorUpdate("Sí, las tenemos", {
+			reply_to_message: botMessage(NOTE_TEXT),
+		});
+
+		expect(eventOf(update)).toMatchObject({
+			type: "human.replied",
+			conversationId: "1001",
+			message: { text: "Sí, las tenemos", author: "human" },
+		});
+	});
+
+	it("turns a `/bot …` reply into `human.briefed` with the text after the command", () => {
+		const update = operatorUpdate("/bot@acme_bot cuesta 11.000\nhay stock", {
+			reply_to_message: botMessage(HANDOFF_TEXT),
+		});
+
+		expect(eventOf(update)).toEqual({
+			type: "human.briefed",
+			eventId: "telegram:update:701",
+			conversationId: "1001",
+			message: {
+				id: "40",
+				author: "human",
+				text: "cuesta 11.000\nhay stock",
+				attachments: [],
+				private: true,
+				sentAt: "2025-10-20T12:01:40.000Z",
+			},
+		});
+	});
+
+	it("ignores operator messages that do not reply to a message of the bot", () => {
+		const toAPerson = operatorUpdate("Hola", {
+			reply_to_message: botMessage(NOTE_TEXT, { is_bot: false }),
+		});
+		const brief = operatorUpdate("/bot cuesta 11.000");
+
+		expect([eventOf(toAPerson), eventOf(brief)]).toEqual([null, null]);
+	});
+
+	it("ignores a reply to a bot message that carries no conversation id", () => {
+		const update = operatorUpdate("Hola", {
+			reply_to_message: botMessage("Bot started."),
+		});
+
+		expect(eventOf(update)).toBeNull();
+	});
+
+	it("ignores an empty brief", () => {
+		const update = operatorUpdate("/bot   ", {
+			reply_to_message: botMessage(HANDOFF_TEXT),
+		});
+
+		expect(eventOf(update)).toBeNull();
+	});
+
+	it("uses the configured brief command", () => {
+		const custom = telegramInbound({
+			secretToken: SECRET,
+			operatorChatId: OPERATOR_CHAT_ID,
+			briefCommand: "decile",
+		});
+		const update = operatorUpdate("/decile cuesta 11.000", {
+			reply_to_message: botMessage(HANDOFF_TEXT),
+		});
+
+		expect(custom.parse(request(update))).toMatchObject({
+			ok: true,
+			event: { type: "human.briefed", message: { text: "cuesta 11.000" } },
+		});
+	});
+
+	it("ignores other commands sent as a reply", () => {
+		const update = operatorUpdate("/start", {
+			reply_to_message: botMessage(HANDOFF_TEXT),
+		});
+
+		expect(eventOf(update)).toBeNull();
 	});
 });

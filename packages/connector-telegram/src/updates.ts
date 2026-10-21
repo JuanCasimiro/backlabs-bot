@@ -1,5 +1,6 @@
-import type { Attachment, Event } from "@backlabs/core";
+import type { Attachment, Event, Message } from "@backlabs/core";
 import { z } from "zod";
+import { conversationIdOf } from "./operator-chat.ts";
 
 // Only the fields we read from https://core.telegram.org/bots/api#update.
 
@@ -30,6 +31,14 @@ const TelegramMessage = z.object({
 	location: z
 		.object({ latitude: z.number(), longitude: z.number() })
 		.optional(),
+	/** In the operator chat: the bot's message an operator is answering. */
+	reply_to_message: z
+		.object({
+			message_id: z.number(),
+			from: User.optional(),
+			text: z.string().optional(),
+		})
+		.optional(),
 });
 type TelegramMessage = z.infer<typeof TelegramMessage>;
 
@@ -44,6 +53,8 @@ export type UpdateOptions = {
 	operatorChatId: number;
 	/** Command an operator sends to give a conversation back. Default "resume". */
 	resumeCommand?: string;
+	/** Command an operator replies with to brief the bot. Default "bot". */
+	briefCommand?: string;
 };
 
 /**
@@ -57,7 +68,7 @@ export function toEvent(update: Update, options: UpdateOptions): Event | null {
 	const eventId = `telegram:update:${update.update_id}`;
 
 	if (message.chat.id === options.operatorChatId) {
-		return operatorCommand(message, eventId, options.resumeCommand ?? "resume");
+		return fromOperators(message, eventId, options);
 	}
 	if (message.chat.type !== "private") return null;
 
@@ -88,16 +99,76 @@ export function toEvent(update: Update, options: UpdateOptions): Event | null {
 	};
 }
 
-function operatorCommand(
+/**
+ * The operator chat (ADR 0007): `/resume <id>` gives a conversation back to
+ * the bot. A reply to one of the bot's notes or handoffs is routed to the
+ * conversation named in that message's first line: plain text is relayed to
+ * the customer, `/bot <facts>` briefs the bot. Anything else is chatter.
+ */
+function fromOperators(
 	message: TelegramMessage,
 	eventId: string,
-	command: string,
+	options: UpdateOptions,
 ): Event | null {
-	const match = message.text?.match(
-		new RegExp(`^/${command}(?:@\\w+)?\\s+(\\S+)`),
+	const text = message.text ?? "";
+
+	const resume = argumentOf(text, options.resumeCommand ?? "resume");
+	if (resume !== null) {
+		const conversationId = resume.split(/\s/, 1)[0];
+		return conversationId
+			? { type: "conversation.resolved", eventId, conversationId }
+			: null;
+	}
+
+	const replied = message.reply_to_message;
+	if (!replied?.from?.is_bot) return null;
+	const conversationId = conversationIdOf(replied.text);
+	if (!conversationId) return null;
+
+	const brief = argumentOf(text, options.briefCommand ?? "bot");
+	if (brief !== null) {
+		if (!brief) return null;
+		return {
+			type: "human.briefed",
+			eventId,
+			conversationId,
+			// The customer never sees a brief.
+			message: humanMessage(message, brief, true),
+		};
+	}
+
+	// Other commands and non-text messages are not meant for the customer.
+	if (!text.trim() || text.startsWith("/")) return null;
+	return {
+		type: "human.replied",
+		eventId,
+		conversationId,
+		message: humanMessage(message, text, false),
+	};
+}
+
+/** Text after `/command` or `/command@bot`, trimmed; null for other messages. */
+function argumentOf(text: string, command: string): string | null {
+	const match = new RegExp(`^/${command}(?:@\\w+)?(?:\\s+([\\s\\S]*))?$`).exec(
+		text,
 	);
-	if (!match?.[1]) return null;
-	return { type: "conversation.resolved", eventId, conversationId: match[1] };
+	return match ? (match[1] ?? "").trim() : null;
+}
+
+function humanMessage(
+	message: TelegramMessage,
+	text: string,
+	isPrivate: boolean,
+): Message {
+	return {
+		// The operator's own message: a failed relay is reported as a reply to it.
+		id: String(message.message_id),
+		author: "human",
+		text,
+		attachments: [],
+		private: isPrivate,
+		sentAt: new Date(message.date * 1000).toISOString(),
+	};
 }
 
 function attachmentsOf(message: TelegramMessage): Attachment[] {

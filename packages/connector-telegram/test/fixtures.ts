@@ -30,7 +30,10 @@ export function contactUpdate(contact: Record<string, unknown>) {
 	return { ...update, message: { ...message, contact } };
 }
 
-export function operatorUpdate(text: string) {
+export function operatorUpdate(
+	text: string,
+	overrides: Record<string, unknown> = {},
+) {
 	return {
 		update_id: 701,
 		message: {
@@ -39,9 +42,28 @@ export function operatorUpdate(text: string) {
 			chat: { id: OPERATOR_CHAT_ID, type: "group", title: "Operators" },
 			from: { id: 2002, is_bot: false, first_name: "Op" },
 			text,
+			...overrides,
 		},
 	};
 }
+
+/**
+ * A message the bot posted to the operator chat, as Telegram gives it back in
+ * `reply_to_message`: plain text, HTML already turned into entities.
+ */
+export function botMessage(text: string, from = { is_bot: true }) {
+	return {
+		message_id: 30,
+		date: 1_760_961_650,
+		chat: { id: OPERATOR_CHAT_ID, type: "group", title: "Operators" },
+		from: { id: 9000, first_name: "Bot", ...from },
+		text,
+	};
+}
+
+export const HANDOFF_TEXT =
+	"🙋 1001\nNeeds a human (workshop). Reply to this message to answer the customer.";
+export const NOTE_TEXT = "📝 1001\nWants a quote for brakes.";
 
 type Call = { method: string; body: Record<string, unknown> };
 
