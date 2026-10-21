@@ -6,8 +6,8 @@ Source of truth for scope, IDs and decisions. Update it in the same commit as th
 
 | ID | What | Where |
 |---|---|---|
-| CORE-01 | Domain events: `message.received`, `human.replied`, `conversation.resolved`, each with a stable `eventId` | `packages/core/src/events.ts` |
-| CORE-02 | Domain actions: `reply`, `note`, `handoff`, `add_labels`, `set_attributes`, `resolve`, each with an `idempotencyKey` | `packages/core/src/actions.ts` |
+| CORE-01 | Domain events: `message.received`, `human.replied`, `human.briefed`, `conversation.resolved`, each with a stable `eventId` | `packages/core/src/events.ts` |
+| CORE-02 | Domain actions: `reply`, `note`, `handoff`, `add_labels`, `set_attributes`, `request_phone`, `relay`, `resolve`, each with an `idempotencyKey` | `packages/core/src/actions.ts` |
 | CORE-03 | Conversation model: `Message`, `Contact`, `Attachment`, author `customer | bot | human` | `packages/core/src/conversation.ts` |
 | CORE-04 | Ports: `ChannelPort` (`history`, `perform`) and `InboundChannel` (`parse`) | `packages/core/src/ports.ts` |
 | CW-01 | Chatwoot inbound: signature verification over the raw body, Agent Bot webhook → domain event, bot echo / private / activity ignored | `packages/connector-chatwoot/src/inbound.ts` |
@@ -26,8 +26,13 @@ Source of truth for scope, IDs and decisions. Update it in the same commit as th
 | TG-01 | Telegram connector: long polling and webhook, own-contact sharing verifies the phone, operator chat for notes and handoffs, `/resume` (ADR 0007) | `packages/connector-telegram` |
 | TEST-02 | `ScriptedChatModel` + `say` / `call` for deterministic runtime tests | `packages/runtime/src/testing.ts` |
 | DOC-02 | ADR 0006–0007, runtime spec, repo skills (`sdd`, `tdd`, `clean-code`, `new-connector`, `agent-eval`) | `docs/`, `.claude/skills/` |
+| RT-13 | `human.briefed` event (core): back to `bot` mode keeping memory, the brief enters the thread; human-authored messages reach the model framed as from the team; a brief never verifies a phone | `packages/core/src/events.ts`, `packages/runtime/src/fold.ts`, `messages.ts` |
+| RT-14 | On direct channels (`ChannelPort.direct`), customer messages while a human owns the conversation go to the operator chat as notes; human replies are relayed to the customer (`relay` action) | `packages/core/src/ports.ts`, `actions.ts`, `packages/runtime/src/worker.ts` |
+| TG-02 | Telegram: a plain reply to a note or handoff in the operator chat becomes `human.replied` and is relayed verbatim; a delivery that will not succeed is reported as a reply to the operator's message | `packages/connector-telegram/src/updates.ts`, `channel.ts`, `operator-chat.ts` |
+| TG-03 | Telegram: `/bot <facts>` as a reply becomes `human.briefed` (command configurable, `briefCommand`) | `packages/connector-telegram/src/updates.ts` |
+| TG-04 | Telegram: handoff names both ways to answer and `/resume`; operator texts configurable (`texts`), fixed first line with the conversation id | `packages/connector-telegram/src/channel.ts` |
 
-Verified 2026-10-20: `tsc` and Biome clean, 93 tests passing against Postgres 16 (5 skipped: contract against a live Chatwoot, needs `CHATWOOT_CONTRACT_*`).
+Verified 2026-10-21: `tsc` and Biome clean, 122 tests passing against Postgres (5 skipped: contract against a live Chatwoot, needs `CHATWOOT_CONTRACT_*`).
 
 ## 🔜 Backlog
 
@@ -39,8 +44,6 @@ Verified 2026-10-20: `tsc` and Biome clean, 93 tests passing against Postgres 16
 | RT-07 | Task queue (follow-ups) | Postgres table with leases and max attempts; scheduler emits "task due" into the inbox with a human-readable reason | idea |
 | RT-08 | Capabilities preamble | Enabled tool packs and integrations printed at boot and injected at session start | idea |
 | RT-11 | Memory trimming | Send the model only the last N turns (or a summary) of long conversations; today the whole thread goes | idea |
-| RT-13 | `human.briefed` event | Back to `bot` mode keeping memory; the brief enters the thread; human-authored messages framed as from the team; never verifies a phone | priorizado — spec `docs/specs/operator-replies.md` |
-| RT-14 | Customer messages while a human owns the conversation | On direct channels, forwarded to the operator chat as a note with the conversation id, so the operator can reply to it | priorizado — same spec |
 | RT-12 | Attachment wait + cost | Wait briefly for attachments that arrive after the text; cost in currency in the run ledger | idea |
 | RT-10 | Import boundaries in CI | `dependency-cruiser`: domain cannot import runtime, adapters or LangGraph | idea |
 
@@ -48,10 +51,7 @@ Verified 2026-10-20: `tsc` and Biome clean, 93 tests passing against Postgres 16
 
 | ID | Feature | Status |
 |---|---|---|
-| CW-04 | Chatwoot: a private note `/bot <facts>` briefs the bot, which answers the customer itself (`human.briefed`); other private notes stay ignored | idea — after TG-03; on Chatwoot humans answer from the inbox |
-| TG-02 | Telegram: an operator answers the customer by replying to the handoff or note in the operator chat; relayed verbatim, `human.replied` | priorizado — spec `docs/specs/operator-replies.md` |
-| TG-03 | Telegram: `/bot <facts>` as a reply briefs the bot, which answers the customer itself (`human.briefed`) | priorizado — same spec |
-| TG-04 | Telegram: handoff text names both ways to answer; operator-chat texts configurable (client language) | priorizado — same spec |
+| CW-04 | Chatwoot: a private note `/bot <facts>` briefs the bot, which answers the customer itself (`human.briefed`, already in core); other private notes stay ignored | idea — on Chatwoot humans answer from the inbox |
 | WA-01 | WhatsApp Cloud API direct connector (today WhatsApp arrives through Chatwoot) | idea |
 
 ### Tools (`packages/tools-*`)
@@ -117,3 +117,4 @@ Verified 2026-10-20: `tsc` and Biome clean, 93 tests passing against Postgres 16
 | 2026-10-20 | A failed run hands off to a human instead of retrying; a run interrupted by a new message is discarded and the next one forks from the last committed checkpoint (runtime spec). |
 | 2026-10-20 | Approval policy (RT-05) postponed: no tool in the first deployments writes to a system of record. |
 | 2026-10-21 | Operators on direct channels answer through the bot, two ways: a reply to the handoff is relayed verbatim (`human.replied`); `/bot <facts>` briefs the bot, which answers keeping its memory (`human.briefed`, new event). The event is generic (core); this increment implements it on Telegram only, where there is no inbox. Chatwoot brief (CW-04) later. "Answer from Telegram" is not viable: no chat by numeric id. While a human owns the conversation, customer messages are forwarded to the operator chat. Spec `docs/specs/operator-replies.md`. |
+| 2026-10-21 | A channel declares itself direct with `ChannelPort.direct` (the channel knows, so a deployment cannot misconfigure it). On direct channels the runtime plans a `relay` action for each human reply and a note for each customer message received in `human` mode. Operator messages on Telegram start with a fixed line carrying the conversation id; replies are routed by it, nothing stored. Spec `docs/specs/operator-replies.md`. |

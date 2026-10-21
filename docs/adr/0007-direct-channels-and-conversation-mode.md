@@ -18,5 +18,9 @@ Two things must not depend on the inbox: knowing whether the bot or a human owns
 ## Consequences
 
 - A handoff works the same everywhere. The bot steps back even on channels where nobody would otherwise stop it.
-- On Telegram, humans answer from their own Telegram account, outside the bot, for now. Relaying operator replies through the bot is a later feature.
+- ~~On Telegram, humans answer from their own Telegram account, outside the bot, for now.~~ Superseded by the operator-replies spec (2026-10-21): Telegram cannot open a chat by numeric id, so operators answer through the bot.
 - `ChannelPort.history` on a direct channel returns what that process saw and sent. The runtime does not depend on it: the agent's memory is the LangGraph checkpoint of the conversation.
+
+## Note (2026-10-21): operators answer through the bot
+
+`docs/specs/operator-replies.md`. A channel declares itself direct with `ChannelPort.direct`. On direct channels the runtime plans a `relay` action for each `human.replied` (the operator's reply reaches the customer verbatim) and forwards customer messages received in `human` mode to the operator chat as notes. A new event, `human.briefed`, gives the conversation back to the bot **keeping** its memory, with the operator's facts as the next turn; `conversation.resolved` still starts a fresh memory. A brief never verifies identity (ADR 0006).
