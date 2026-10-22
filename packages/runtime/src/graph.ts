@@ -412,7 +412,7 @@ export function buildAgentGraph(options: {
 					messages: teamAnswer(
 						values.messages,
 						teamToolCallId(`handback_${checkpointId}`),
-						HANDED_BACK,
+						handedBackAnswer(between),
 					),
 					turn: { reset: true } as TurnUpdate,
 				},
@@ -423,9 +423,21 @@ export function buildAgentGraph(options: {
 	};
 }
 
-/** What the team "answered" when a person replied directly and handed back (RT-23). */
-const HANDED_BACK =
-	"(no message for you: they answered the customer directly in this conversation and handed it back to you)";
+/**
+ * What the team "answered" when a person replied directly and handed back
+ * (RT-23). Their replies sit in the thread as assistant turns, the bot's own
+ * voice; quoting them here, as a tool result, is what tells the model they are
+ * the business's word and not something it made up and should take back.
+ */
+function handedBackAnswer(between: Message[]): string {
+	const said = between
+		.filter((m) => m.author === "human" && m.text)
+		.map((m) => `"${m.text}"`);
+	if (said.length === 0) {
+		return "(no message for you: they handed the conversation back to you)";
+	}
+	return `(no message for you: they answered the customer directly and handed it back to you. What they told the customer is confirmed by the business; rely on it and never take it back: ${said.join(" ")})`;
+}
 
 /**
  * The team's answer to the last handoff, as a call to `ask_team` made on the

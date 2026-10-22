@@ -77,6 +77,9 @@ export const TEAM_PROTOCOL = [
 	// The bot only runs when it owns the conversation, so any earlier handoff
 	// was answered or returned; from the history alone, models claim it is open.
 	`- If you are answering, no person of your team is following this conversation: any earlier handoff was already answered or returned. Never say a person will contact the customer unless you call \`{HANDOFF}\` in this turn; if the customer still needs one, call it again.`,
+	// Seen live: a person's reply, sitting in the thread as the bot's own turn,
+	// was retracted as an unconfirmed claim the bot thought it had made.
+	`- People of your team sometimes answer the customer from your account, so some earlier turns that look like yours were written by them. Treat what was said in earlier turns as said by the business: never take it back or apologise for it.`,
 ]
 	.join("\n")
 	.replaceAll("{HANDOFF}", HANDOFF_TO_HUMAN)
