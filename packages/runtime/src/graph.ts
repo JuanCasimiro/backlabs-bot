@@ -1,10 +1,11 @@
-import type {
-	Action,
-	AgentConfig,
-	BotConfig,
-	Message,
-	Tool,
-	ToolContext,
+import {
+	type Action,
+	type AgentConfig,
+	type BotConfig,
+	HandoffReasonSchema,
+	type Message,
+	type Tool,
+	type ToolContext,
 } from "@backlabs/core";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import {
@@ -85,6 +86,8 @@ export type AgentRun = {
 	checkpointId: string | null;
 	messages: Message[];
 	context: ToolContext;
+	/** Whether the customer wrote during this run (RT-25). Default: never. */
+	isStale?: () => Promise<boolean>;
 };
 
 /**
@@ -177,7 +180,10 @@ export function buildAgentGraph(options: {
 			model,
 			toolDefinitions(agent, tools),
 		).invoke(
-			[new SystemMessage(systemPrompt(agent, context)), ...state.messages],
+			[
+				new SystemMessage(systemPrompt(agent, context, config.rules)),
+				...state.messages,
+			],
 			runConfig,
 		);
 		return {
@@ -224,19 +230,31 @@ export function buildAgentGraph(options: {
 			} else if (call.name === HANDOFF_TO_HUMAN) {
 				const summary =
 					String(call.args.summary ?? "").trim() || "Handoff requested.";
+				const reason = HandoffReasonSchema.safeParse(call.args.reason);
 				intents.push({ type: "note", text: summary });
 				intents.push({
 					type: "handoff",
 					...(agent.team ? { team: agent.team } : {}),
+					reason: reason.success ? reason.data : "other",
+					source: "agent",
 				});
 				handedOff = true;
-				respond({
-					ok: true,
-					// Models otherwise offer to keep collecting ("send me a photo and
-					// I'll add it"), but the bot stays silent until the team answers.
-					detail:
-						"A person of your team takes over from here; you will not answer again until they hand the conversation back. Tell the customer briefly, and do not offer to receive or do anything else yourself.",
-				});
+				// RT-27: a fixed reply replaces the one the model would write; the
+				// run ends here and the thread still waits for the team.
+				const fixedReply = config.texts.handoffReply;
+				if (fixedReply && agent.mode === "autonomous") {
+					intents.push({ type: "reply", text: fixedReply });
+					stopped = true;
+					respond({ ok: true });
+				} else {
+					respond({
+						ok: true,
+						// Models otherwise offer to keep collecting ("send me a photo and
+						// I'll add it"), but the bot stays silent until the team answers.
+						detail:
+							"A person of your team takes over from here; you will not answer again until they hand the conversation back. Tell the customer briefly, and do not offer to receive or do anything else yourself.",
+					});
+				}
 			} else if (call.name === REQUEST_PHONE && agent.mode === "autonomous") {
 				intents.push({
 					type: "request_phone",
@@ -246,7 +264,13 @@ export function buildAgentGraph(options: {
 				respond({ ok: true });
 			} else {
 				respond(
-					await runClientTool(tools.get(call.name), agent, call.args, context),
+					await runClientTool(
+						tools.get(call.name),
+						agent,
+						call.args,
+						context,
+						staleCheckOf(runConfig),
+					),
 				);
 			}
 		}
@@ -300,9 +324,11 @@ export function buildAgentGraph(options: {
 		.addConditionalEdges("agent", (state) =>
 			hasToolCalls(state.messages.at(-1)) ? "tools" : "finish",
 		)
-		.addConditionalEdges("tools", (state) =>
-			state.turn.stopped ? END : "agent",
-		)
+		.addConditionalEdges("tools", (state) => {
+			if (!state.turn.stopped) return "agent";
+			// A fixed handoff reply ends the turn, but the thread waits for the team.
+			return state.turn.handedOff ? WAIT_FOR_TEAM : END;
+		})
 		.addConditionalEdges("finish", (state) =>
 			state.turn.handedOff ? WAIT_FOR_TEAM : END,
 		)
@@ -337,6 +363,7 @@ export function buildAgentGraph(options: {
 				...thread,
 				...(run.checkpointId ? { checkpoint_id: run.checkpointId } : {}),
 				toolContext: run.context,
+				...(run.isStale ? { isStale: run.isStale } : {}),
 			},
 			recursionLimit: RECURSION_LIMIT,
 		});
@@ -439,6 +466,13 @@ function contextOf(runConfig: RunnableConfig): ToolContext {
 		| undefined;
 	if (!context) throw new Error("run started without a tool context");
 	return context;
+}
+
+function staleCheckOf(runConfig: RunnableConfig): () => Promise<boolean> {
+	const check = runConfig.configurable?.isStale as
+		| (() => Promise<boolean>)
+		| undefined;
+	return check ?? (async () => false);
 }
 
 function hasToolCalls(message: BaseMessage | undefined): boolean {

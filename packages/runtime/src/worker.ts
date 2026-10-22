@@ -172,6 +172,8 @@ export function createWorker(options: WorkerOptions) {
 			contact: folded.contact,
 			...(phone ? { verifiedPhone: phone } : {}),
 		};
+		// RT-25: a tool with side effects asks before acting.
+		const isStale = () => hasEventsAfter(pool, conversation.id, upToSeq);
 
 		let result: Awaited<ReturnType<AgentGraph["run"]>>;
 		try {
@@ -183,12 +185,14 @@ export function createWorker(options: WorkerOptions) {
 							brief: folded.brief,
 							messages: folded.messages,
 							context,
+							isStale,
 						})
 					: await graph.run({
 							threadId,
 							checkpointId: next.checkpointId,
 							messages: folded.messages,
 							context,
+							isStale,
 						});
 		} catch (error) {
 			return commit({
@@ -299,6 +303,6 @@ function fallbackIntents(config: BotConfig, error: unknown): Intent[] {
 		...(config.fallbackText
 			? [{ type: "reply" as const, text: config.fallbackText }]
 			: []),
-		{ type: "handoff" },
+		{ type: "handoff", reason: "other", source: "failure" },
 	];
 }

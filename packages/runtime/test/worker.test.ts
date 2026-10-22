@@ -751,6 +751,163 @@ describe.skipIf(!DATABASE_URL)("worker", () => {
 		expect(t.model.calls[0]?.tools).not.toContain("request_phone_verification");
 	});
 
+	describe("RT-27: handoff reason, source and fixed reply", () => {
+		const handoffs = async () =>
+			(
+				await db.pool.query<{ action: Record<string, unknown> }>(
+					"select action from outbox where action->>'type' = 'handoff' order by seq",
+				)
+			).rows.map((r) => r.action);
+
+		it("records the handoff reason given by the model, and other when it gives none", async () => {
+			const t = await bot(db, {
+				script: [
+					call("handoff_to_human", {
+						summary: "Wants a part we do not list.",
+						reason: "missing_knowledge",
+					}),
+					say("Te paso con alguien."),
+					call("handoff_to_human", { summary: "Asks for a person." }),
+					say("Te paso con alguien."),
+				],
+			});
+			await t.send(received("¿tienen el paragolpe?"));
+			await t.settle();
+			await t.send(received("hola de nuevo", { conversationId: "conv-2" }));
+			await t.settle();
+
+			expect(await handoffs()).toMatchObject([
+				{ reason: "missing_knowledge", source: "agent" },
+				{ reason: "other", source: "agent" },
+			]);
+		});
+
+		it("marks a failure handoff with source failure", async () => {
+			const t = await bot(db, { script: [] });
+			await t.send(received("hola"));
+			await t.settle();
+
+			expect(await handoffs()).toMatchObject([{ source: "failure" }]);
+		});
+
+		it("sends the fixed handoff reply without asking the model, and still waits for the team", async () => {
+			const t = await bot(db, {
+				config: {
+					...singleAgent,
+					texts: { handoffReply: "Te paso con una persona del equipo." },
+				},
+				script: [
+					call("handoff_to_human", { summary: "Asks for a price." }),
+					say("Sale 11 mil."),
+				],
+			});
+			await t.send(received("¿cuánto sale?"));
+			await t.settle();
+			expect(t.model.calls).toHaveLength(1);
+			expect(t.replies()).toEqual(["Te paso con una persona del equipo."]);
+
+			await t.send(humanBriefed("sale 11 mil"));
+			await t.settle();
+
+			expect(String(t.model.calls[1]?.lastToolResult)).toMatch(/sale 11 mil/);
+			expect(t.replies().at(-1)).toBe("Sale 11 mil.");
+		});
+	});
+
+	describe("RT-25: tools with side effects", () => {
+		const book = defineTool({
+			name: "book",
+			description: "Books the part for the customer.",
+			input: z.object({}),
+			async run() {
+				return { booked: true };
+			},
+		});
+		const lookup = defineTool({
+			name: "lookup",
+			description: "Looks the part up.",
+			input: z.object({}),
+			readOnly: true,
+			async run() {
+				return { found: true };
+			},
+		});
+		const seller = (mode: "autonomous" | "copilot" = "autonomous") => ({
+			entryAgent: "parts",
+			agents: [
+				{
+					name: "parts",
+					instructions: "Help.",
+					tools: ["book", "lookup"],
+					mode,
+				},
+			],
+		});
+
+		it("skips a side-effect tool when the customer wrote during the run", async () => {
+			const run = vi.spyOn(book, "run");
+			let t: Awaited<ReturnType<typeof bot>>;
+			t = await bot(db, {
+				config: seller(),
+				tools: [book, lookup],
+				script: [
+					async () => {
+						await t.send(received("mejor no, esperá"));
+						return call("book", {})();
+					},
+					say("Listo."),
+					say("Dale, no lo reservo."),
+				],
+			});
+
+			await t.send(received("reservámelo"));
+			await t.settle();
+
+			expect(run).not.toHaveBeenCalled();
+			expect(t.model.calls[1]?.lastToolResult).toMatchObject({
+				error: "skipped_stale",
+			});
+			expect(t.replies()).toEqual(["Dale, no lo reservo."]);
+		});
+
+		it("runs a read-only tool even when the customer wrote during the run", async () => {
+			const run = vi.spyOn(lookup, "run");
+			let t: Awaited<ReturnType<typeof bot>>;
+			t = await bot(db, {
+				config: seller(),
+				tools: [book, lookup],
+				script: [
+					async () => {
+						await t.send(received("y el trasero también"));
+						return call("lookup", {})();
+					},
+					say("Lo tengo."),
+					say("Tengo los dos."),
+				],
+			});
+
+			await t.send(received("¿tenés el delantero?"));
+			await t.settle();
+
+			expect(run).toHaveBeenCalledTimes(1);
+			expect(t.model.calls[1]?.lastToolResult).toEqual({ found: true });
+		});
+
+		it("offers a copilot agent only read-only tools", async () => {
+			const t = await bot(db, {
+				config: seller("copilot"),
+				tools: [book, lookup],
+				script: [say("Candidates: SKU 1.")],
+			});
+
+			await t.send(received("pastillas para Gol 2015"));
+			await t.settle();
+
+			expect(t.model.calls[0]?.tools).toContain("lookup");
+			expect(t.model.calls[0]?.tools).not.toContain("book");
+		});
+	});
+
 	it("does not call a personal-data tool without a verified phone", async () => {
 		const run = vi.spyOn(orderStatus, "run");
 		const t = await bot(db, {

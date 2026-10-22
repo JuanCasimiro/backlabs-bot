@@ -22,11 +22,25 @@ export const NoteSchema = z.object({
 	text: z.string().min(1),
 });
 
+/** Why the bot hands off (RT-27), so operators and reports can tell. */
+export const HandoffReasonSchema = z.enum([
+	"customer_request",
+	"missing_knowledge",
+	"unsupported_request",
+	"policy_restriction",
+	"tool_failure",
+	"other",
+]);
+export type HandoffReason = z.infer<typeof HandoffReasonSchema>;
+
 export const HandoffSchema = z.object({
 	type: z.literal("handoff"),
 	...base,
 	/** Name of a human team from the client configuration. Omitted: any human. */
 	team: z.string().min(1).optional(),
+	reason: HandoffReasonSchema.optional(),
+	/** `agent`: the model handed off. `failure`: the runtime did, after a failed run. */
+	source: z.enum(["agent", "failure"]).optional(),
 });
 
 export const AddLabelsSchema = z.object({

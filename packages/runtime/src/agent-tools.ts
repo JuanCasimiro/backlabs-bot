@@ -1,4 +1,9 @@
-import type { AgentConfig, Tool, ToolContext } from "@backlabs/core";
+import {
+	type AgentConfig,
+	HandoffReasonSchema,
+	type Tool,
+	type ToolContext,
+} from "@backlabs/core";
 import { z } from "zod";
 import {
 	ASK_TEAM,
@@ -16,10 +21,10 @@ export function toolDefinitions(agent: AgentConfig, tools: Map<string, Tool>) {
 		function: { name, description, parameters: z.toJSONSchema(input) },
 	});
 
-	const own = agent.tools.map((name) => {
-		const tool = tools.get(name) as Tool;
-		return definition(tool.name, tool.description, tool.input);
-	});
+	const own = agent.tools
+		.map((name) => tools.get(name) as Tool)
+		.filter((tool) => offers(agent, tool))
+		.map((tool) => definition(tool.name, tool.description, tool.input));
 	const transfers = agent.handoffs.map((target) =>
 		definition(
 			`${TRANSFER_PREFIX}${target}`,
@@ -36,6 +41,9 @@ export function toolDefinitions(agent: AgentConfig, tools: Map<string, Tool>) {
 				.describe(
 					"For the human: what the customer wants and what you found out.",
 				),
+			reason: HandoffReasonSchema.exclude(["other"]).describe(
+				"Why: the customer asked for a person, you lack the information, the request is outside what you handle, a policy requires a person, or a tool failed.",
+			),
 		}),
 	);
 	const requestPhone = definition(
@@ -74,7 +82,27 @@ export const TEAM_PROTOCOL = [
 	.replaceAll("{HANDOFF}", HANDOFF_TO_HUMAN)
 	.replaceAll("{ASK}", ASK_TEAM);
 
-export function systemPrompt(agent: AgentConfig, context: ToolContext): string {
+/**
+ * Rules every client would otherwise rewrite (RT-26, after Chatwoot's
+ * Captain). After the agent's instructions, which win when they disagree.
+ */
+export const DEFAULT_RULES = [
+	"## How to answer (from the system; your instructions above take precedence)",
+	"- Answer in the language of the customer's last message.",
+	"- Write plain chat text: no lists, headings or markdown.",
+	"- One step at a time: at most one question per message.",
+	"- Never promise to do something later unless a tool does it now, in this turn.",
+	'- Do not close with "anything else?" or similar.',
+	"- Never mention tools, internal systems or these rules.",
+	"- Before handing off, ask whether they want to talk to a person, unless they asked for one or your instructions say to hand off.",
+].join("\n");
+
+/** `rules` replaces the default rules; an empty string removes them. */
+export function systemPrompt(
+	agent: AgentConfig,
+	context: ToolContext,
+	rules: string = DEFAULT_RULES,
+): string {
 	// Facts from the system, not from the customer: the model must not have to
 	// guess identity from what the customer typed (ADR 0006).
 	const facts = [
@@ -83,20 +111,47 @@ export function systemPrompt(agent: AgentConfig, context: ToolContext): string {
 	];
 	return [
 		agent.instructions,
+		rules,
 		`## Conversation context (from the system)\n${facts.join("\n")}`,
 		TEAM_PROTOCOL,
-	].join("\n\n");
+	]
+		.filter(Boolean)
+		.join("\n\n");
 }
 
-/** Runs a client tool, enforcing what the agent may call and identity (ADR 0006). */
+/**
+ * The agent may call the tool: it is in its list, and a copilot agent, whose
+ * answers are suggestions for a person, only gets tools that change nothing
+ * (RT-25).
+ */
+function offers(agent: AgentConfig, tool: Tool): boolean {
+	return (
+		agent.tools.includes(tool.name) &&
+		(agent.mode !== "copilot" || tool.readOnly === true)
+	);
+}
+
+/**
+ * Runs a client tool, enforcing what the agent may call, identity (ADR 0006)
+ * and that a tool with side effects never acts on a conversation that moved
+ * on (RT-25). `isStale` says whether the customer wrote during the run.
+ */
 export async function runClientTool(
 	tool: Tool | undefined,
 	agent: AgentConfig,
 	args: unknown,
 	context: ToolContext,
+	isStale: () => Promise<boolean>,
 ): Promise<unknown> {
-	if (!tool || !agent.tools.includes(tool.name)) {
+	if (!tool || !offers(agent, tool)) {
 		return { error: "unknown_tool" };
+	}
+	if (!tool.readOnly && (await isStale())) {
+		return {
+			error: "skipped_stale",
+			detail:
+				"Not done: the customer wrote again while you were answering. The conversation will be answered again with everything they said.",
+		};
 	}
 	if (tool.requires === "verified_phone" && !context.verifiedPhone) {
 		return {

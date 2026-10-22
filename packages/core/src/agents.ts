@@ -21,6 +21,12 @@ export type Tool<Input extends z.ZodType = z.ZodType> = {
 	/** The runtime refuses to call the tool until the phone is verified. */
 	requires?: "verified_phone";
 	/**
+	 * The tool changes nothing outside (RT-25). Default `false`: a tool with
+	 * side effects is skipped if the customer wrote during the run, and is
+	 * never offered to a copilot agent.
+	 */
+	readOnly?: boolean;
+	/**
 	 * Returns an observation for the model: plain JSON with what was found and
 	 * where it came from. Throw only for outages and bugs.
 	 */
@@ -81,6 +87,11 @@ export const BotTextsSchema = z.object({
 		.default(
 			"This brief was not used: the bot has no pending handoff in this conversation (it did not hand it off, or it was resolved since). Answer the customer yourself.",
 		),
+	/**
+	 * Sent to the customer on every handoff instead of a text the model writes
+	 * (RT-27). Omitted: the model writes it.
+	 */
+	handoffReply: z.string().min(1).optional(),
 });
 
 export const BotConfigSchema = z
@@ -94,6 +105,11 @@ export const BotConfigSchema = z
 		 */
 		fallbackText: z.string().min(1).optional(),
 		texts: BotTextsSchema.prefault({}),
+		/**
+		 * Replaces the runtime's default answering rules (RT-26); an empty
+		 * string removes them. Omitted: the defaults apply.
+		 */
+		rules: z.string().optional(),
 	})
 	.superRefine((config, ctx) => {
 		const names = new Set(config.agents.map((a) => a.name));
