@@ -47,8 +47,18 @@ Verified 2026-10-21: `tsc` and Biome clean, 132 tests passing against Postgres (
 | RT-07 | Task queue (follow-ups) | Postgres table with leases and max attempts; scheduler emits "task due" into the inbox with a human-readable reason | idea |
 | RT-08 | Capabilities preamble | Enabled tool packs and integrations printed at boot and injected at session start | idea |
 | RT-11 | Memory trimming | Send the model only the last N turns (or a summary) of long conversations; today the whole thread goes | idea |
-| RT-12 | Attachment wait + cost | Wait briefly for attachments that arrive after the text; cost in currency in the run ledger | idea |
+| RT-12 | Smarter debounce | Wait longer when the burst has attachments (1 s + 1 s per attachment, up to 5 s, as Chatwoot's Captain does) and cap the total wait (e.g. 15 s), so a customer who keeps typing still gets an answer. Today: a fixed 2 s window with no cap | priorizado |
+| RT-18 | Images to the model | Attachments become image content blocks for multimodal models; connectors resolve a file to something the model can read (Telegram `getFile`, Chatwoot `data_url`). Today the model only sees `[attachment: image]` | idea |
+| RT-19 | Voice notes | A `Transcriber` port: voice notes become text before the run. Self-hosted Whisper by default (customer audio must not go to a third party without the client's consent) | idea |
+| RT-20 | Cost in the run ledger | Price per model → cost per run, next to tokens | idea |
 | RT-10 | Import boundaries in CI | `dependency-cruiser`: domain cannot import runtime, adapters or LangGraph | idea |
+
+### Developer experience
+
+| ID | Feature | What it does | Status |
+|---|---|---|---|
+| PG-01 | Playground | Local web page (`npm run playground` in a client repo) to chat as the customer and see, next to each answer, the active agent, tool calls with arguments and results, transfers, notes and handoffs; verified or unverified customer; reloads prompts on "new conversation". Spec: [`docs/specs/playground.md`](docs/specs/playground.md) | priorizado |
+| PG-02 | Save as eval | From the playground, save a conversation as an eval file for the client repo (needs EV-01) | idea |
 
 ### Connectors
 
@@ -119,6 +129,7 @@ Verified 2026-10-21: `tsc` and Biome clean, 132 tests passing against Postgres (
 | 2026-10-20 | The runtime owns the bot/human mode of each conversation; direct channels send notes and handoffs to an operator chat; Telegram is the first direct channel (ADR 0007). |
 | 2026-10-20 | A failed run hands off to a human instead of retrying; a run interrupted by a new message is discarded and the next one forks from the last committed checkpoint (runtime spec). |
 | 2026-10-20 | Approval policy (RT-05) postponed: no tool in the first deployments writes to a system of record. |
+| 2026-10-20 | Compared with Chatwoot's Captain (v4.18 code): we keep the debounce (one model call per burst) and take its attachment-aware wait (RT-12); its vision and audio transcription become RT-18 / RT-19 (renumbered on merge: RT-13..17 were taken by operator replies); its playground becomes PG-01. Captain itself is `enterprise/` and needs a paid plan in production. |
 | 2026-10-21 | Operators on direct channels answer through the bot, two ways: a reply to the handoff is relayed verbatim (`human.replied`); `/bot <facts>` briefs the bot, which answers keeping its memory (`human.briefed`, new event). The event is generic (core); this increment implements it on Telegram only, where there is no inbox. Chatwoot brief (CW-04) later. "Answer from Telegram" is not viable: no chat by numeric id. While a human owns the conversation, customer messages are forwarded to the operator chat. Spec `docs/specs/operator-replies.md`. |
 | 2026-10-21 | A channel declares itself direct with `ChannelPort.direct` (the channel knows, so a deployment cannot misconfigure it). On direct channels the runtime plans a `relay` action for each human reply and a note for each customer message received in `human` mode. Operator messages on Telegram start with a fixed line carrying the conversation id; replies are routed by it, nothing stored. Spec `docs/specs/operator-replies.md`. |
 | 2026-10-21 | A brief is the team's answer to the handoff: `handoff_to_human` pauses the graph and the brief resumes it as that tool's result. The user-turn framing (RT-13, `FROM_THE_TEAM`) is dropped: the model read it as the customer claiming a price and refused it. Same pause/resume plumbing as RT-05. Spec `docs/specs/brief-as-tool-result.md`. |
