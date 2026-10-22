@@ -8,3 +8,6 @@ node_modules/
 dist/
 coverage/
 *.log
+
+# Session logs live outside this public repository
+CLAUDE_LOG.md

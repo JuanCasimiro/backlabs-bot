@@ -195,7 +195,7 @@ describe("operator chat", () => {
 	});
 
 	it("turns a `/bot …` reply into `human.briefed` with the text after the command", () => {
-		const update = operatorUpdate("/bot@acme_bot cuesta 11.000\nhay stock", {
+		const update = operatorUpdate("/bot@acme_bot it costs 120\nin stock", {
 			reply_to_message: botMessage(HANDOFF_TEXT),
 		});
 
@@ -206,7 +206,7 @@ describe("operator chat", () => {
 			message: {
 				id: "40",
 				author: "human",
-				text: "cuesta 11.000\nhay stock",
+				text: "it costs 120\nin stock",
 				attachments: [],
 				private: true,
 				sentAt: "2025-10-20T12:01:40.000Z",
@@ -218,13 +218,13 @@ describe("operator chat", () => {
 		const toAPerson = operatorUpdate("Hola", {
 			reply_to_message: botMessage(NOTE_TEXT, { id: 2002, is_bot: false }),
 		});
-		const brief = operatorUpdate("/bot cuesta 11.000");
+		const brief = operatorUpdate("/bot it costs 120");
 
 		expect([eventOf(toAPerson), eventOf(brief)]).toEqual([null, null]);
 	});
 
 	it("ignores a reply to another bot's message, even with a forged header", () => {
-		const update = operatorUpdate("/bot cuesta 11.000", {
+		const update = operatorUpdate("/bot it costs 120", {
 			reply_to_message: botMessage(HANDOFF_TEXT, {
 				id: BOT_ID + 1,
 				is_bot: true,
@@ -255,15 +255,15 @@ describe("operator chat", () => {
 			secretToken: SECRET,
 			botId: BOT_ID,
 			operatorChatId: OPERATOR_CHAT_ID,
-			briefCommand: "decile",
+			briefCommand: "answer",
 		});
-		const update = operatorUpdate("/decile cuesta 11.000", {
+		const update = operatorUpdate("/answer it costs 120", {
 			reply_to_message: botMessage(HANDOFF_TEXT),
 		});
 
 		expect(custom.parse(request(update))).toMatchObject({
 			ok: true,
-			event: { type: "human.briefed", message: { text: "cuesta 11.000" } },
+			event: { type: "human.briefed", message: { text: "it costs 120" } },
 		});
 	});
 

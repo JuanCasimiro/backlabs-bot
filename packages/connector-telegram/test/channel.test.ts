@@ -119,20 +119,19 @@ describe("perform", () => {
 		const { channel, calls } = channelWith(fakeTelegram(), {
 			briefCommand: "bot",
 			texts: {
-				handoff:
-					"Necesita una persona{team}. Respondé o usá /{brief}; /{resume} {id}",
-				note: "Nota: {text}",
+				handoff: "Someone is needed{team}. Reply, or /{brief}; /{resume} {id}",
+				note: "Note: {text}",
 			},
 		});
 
-		await channel.perform({ ...key, type: "handoff", team: "taller" });
-		await channel.perform({ ...key, type: "note", text: "<pastillas>" });
+		await channel.perform({ ...key, type: "handoff", team: "sales" });
+		await channel.perform({ ...key, type: "note", text: "<order 42>" });
 
 		expect(calls[0]?.body.text).toContain(
-			"Necesita una persona (taller). Respondé o usá /bot; /resume 1001",
+			"Someone is needed (sales). Reply, or /bot; /resume 1001",
 		);
 		expect(calls[0]?.body.text).toContain("tg://user?id=1001");
-		expect(calls[1]?.body.text).toContain("Nota: &lt;pastillas&gt;");
+		expect(calls[1]?.body.text).toContain("Note: &lt;order 42&gt;");
 		expect(calls[1]?.body.text).toContain("1001");
 	});
 

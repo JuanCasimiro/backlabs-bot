@@ -120,7 +120,7 @@ webhook ──► api ──INSERT (dedup)──► inbox ──► worker ─�
 
 **Inbox.** The webhook handler never runs an agent. It normalizes the event, inserts it into `inbox` deduplicated by the source event id, and returns 200. Duplicate webhooks become no-ops.
 
-**Worker.** Claims inbox rows with `FOR UPDATE SKIP LOCKED` and holds a **lock per conversation**, so one conversation never has two runs at once. Messages that arrive during the debounce window (or while a run is in flight) are folded into the next run; a response generated against a stale history is discarded, not sent. It waits briefly for attachments.
+**Worker.** Claims inbox rows with `FOR UPDATE SKIP LOCKED` and holds a **lock per conversation**, so one conversation never has two runs at once. Messages that arrive during the debounce window (or while a run is in flight) are folded into the next run; a response generated against a stale history is discarded, not sent. A conversation is claimed after a quiet time since its last pending event (`debounceMs`, default 2 s), or once its oldest pending event has waited `maxWaitMs` (default 15 s), so a customer who keeps typing still gets an answer. Both are set per client. A longer wait for attachments is planned (RT-22), not built.
 
 **Per run:**
 1. Load the conversation from the channel and the graph state from the checkpointer (`thread_id` = conversation id).
@@ -189,7 +189,7 @@ How we build, by layer:
 
 ## 10. Open questions
 
-- Debounce window and attachment wait times: defaults per channel, overridable per client.
+- Debounce defaults per channel (today one default for all, overridable per client) and the attachment wait (RT-22).
 
 ## Acknowledgements
 
