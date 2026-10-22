@@ -115,6 +115,16 @@ export type AgentGraph = {
 	 * the pause. Returns the new checkpoint.
 	 */
 	append(point: ThreadPoint, messages: Message[]): Promise<string>;
+	/**
+	 * A person gave the conversation back (RT-23): records `between` and, if
+	 * the thread was waiting for the team, closes the pause as answered by the
+	 * team directly. Runs nothing. Returns the new checkpoint.
+	 */
+	handBack(
+		point: ThreadPoint,
+		between: Message[],
+		waitingForTeam: boolean,
+	): Promise<string>;
 };
 
 /** Passed to `interrupt` and back through `Command({ resume })`. */
@@ -268,20 +278,13 @@ export function buildAgentGraph(options: {
 	 */
 	function waitForTeam(state: State) {
 		const answer = interrupt<WaitingFor, TeamAnswer>("team");
-		const question = lastHandoffSummary(state.messages);
-		const id = teamToolCallId(answer.brief.id);
 		return {
 			messages: [
-				new AIMessage({
-					content: "",
-					tool_calls: [
-						{ id, name: ASK_TEAM, args: { question }, type: "tool_call" },
-					],
-				}),
-				new ToolMessage({
-					tool_call_id: id,
-					content: `Answer from the team: ${contentOf(answer.brief)}`,
-				}),
+				...teamAnswer(
+					state.messages,
+					teamToolCallId(answer.brief.id),
+					contentOf(answer.brief),
+				),
 				...answer.messages.map(toModelMessage),
 			],
 			turn: { reset: true } as TurnUpdate,
@@ -367,7 +370,58 @@ export function buildAgentGraph(options: {
 		},
 
 		append,
+
+		async handBack(point, between, waitingForTeam) {
+			const checkpointId =
+				between.length > 0 ? await append(point, between) : point.checkpointId;
+			if (!waitingForTeam) return checkpointId;
+			// As if `wait_for_team` had run with this answer: the pause is over and
+			// the next run starts from the top with the customer's new message.
+			const config = at({ threadId: point.threadId, checkpointId });
+			const { values } = await graph.getState(config);
+			const saved = await graph.updateState(
+				config,
+				{
+					messages: teamAnswer(
+						values.messages,
+						teamToolCallId(`handback_${checkpointId}`),
+						HANDED_BACK,
+					),
+					turn: { reset: true } as TurnUpdate,
+				},
+				WAIT_FOR_TEAM,
+			);
+			return String(saved.configurable?.checkpoint_id);
+		},
 	};
+}
+
+/** What the team "answered" when a person replied directly and handed back (RT-23). */
+const HANDED_BACK =
+	"(no message for you: they answered the customer directly in this conversation and handed it back to you)";
+
+/**
+ * The team's answer to the last handoff, as a call to `ask_team` made on the
+ * bot's behalf and its result: models treat tool results as facts (RT-15).
+ */
+function teamAnswer(
+	history: BaseMessage[],
+	id: string,
+	answer: string,
+): BaseMessage[] {
+	const question = lastHandoffSummary(history);
+	return [
+		new AIMessage({
+			content: "",
+			tool_calls: [
+				{ id, name: ASK_TEAM, args: { question }, type: "tool_call" },
+			],
+		}),
+		new ToolMessage({
+			tool_call_id: id,
+			content: `Answer from the team: ${answer}`,
+		}),
+	];
 }
 
 function bindTools(

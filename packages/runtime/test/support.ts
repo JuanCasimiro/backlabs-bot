@@ -92,6 +92,22 @@ export function resolved(conversationId = "conv-1"): Event {
 	};
 }
 
+export function takenOver(conversationId = "conv-1"): Event {
+	return {
+		type: "conversation.taken_over",
+		eventId: `taken-over-${randomUUID()}`,
+		conversationId,
+	};
+}
+
+export function handedBack(conversationId = "conv-1"): Event {
+	return {
+		type: "conversation.handed_back",
+		eventId: `handed-back-${randomUUID()}`,
+		conversationId,
+	};
+}
+
 export function humanReplied(text: string, conversationId = "conv-1"): Event {
 	return {
 		type: "human.replied",

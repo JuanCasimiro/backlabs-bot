@@ -22,6 +22,12 @@ export type FoldedEvents = {
 	unusedBriefs: Message[];
 	/** The conversation was resolved: the next run starts a new memory. */
 	resetMemory: boolean;
+	/**
+	 * A person gave the conversation back to the bot (RT-23). What happened
+	 * meanwhile (`humanTurn`) goes into the memory, and a pending handoff is
+	 * closed as answered by the team.
+	 */
+	handedBack: boolean;
 };
 
 /**
@@ -44,20 +50,40 @@ export function foldEvents(
 		brief: null,
 		unusedBriefs: [],
 		resetMemory: false,
+		handedBack: false,
+	};
+
+	// A person owns the conversation from here: whatever the bot was about to
+	// answer is theirs now. After a brief, the brief is dropped and the thread
+	// keeps waiting.
+	const takeOver = () => {
+		folded.mode = "human";
+		folded.messages = [];
+		folded.handedBack = false;
+		if (folded.brief) {
+			folded.brief = null;
+			waitingForTeam = true;
+		}
 	};
 
 	for (const event of events) {
 		switch (event.type) {
-			// A human reply after a brief means the operator took over after all:
-			// the brief is dropped and the thread keeps waiting.
 			case "human.replied":
-				folded.mode = "human";
-				folded.messages = [];
-				if (folded.brief) {
-					folded.brief = null;
-					waitingForTeam = true;
-				}
+				takeOver();
 				folded.humanTurn.push(event.message);
+				break;
+			// RT-23: the channel says who answers. Both are no-ops when it
+			// already agrees with the runtime.
+			case "conversation.taken_over":
+				if (folded.mode === "bot") takeOver();
+				break;
+			// The pending handoff, if any, is closed as answered by the team.
+			case "conversation.handed_back":
+				if (folded.mode === "human") {
+					folded.mode = "bot";
+					folded.handedBack = true;
+					waitingForTeam = false;
+				}
 				break;
 			// The contact is untouched: a brief never verifies anyone (ADR 0006).
 			case "human.briefed":
@@ -76,6 +102,7 @@ export function foldEvents(
 				folded.brief = null;
 				waitingForTeam = false;
 				folded.resetMemory = true;
+				folded.handedBack = false;
 				break;
 			case "message.received":
 				folded.contact = mergeContact(folded.contact, event.contact);

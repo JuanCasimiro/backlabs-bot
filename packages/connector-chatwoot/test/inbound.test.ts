@@ -198,6 +198,49 @@ describe("conversation_resolved", () => {
 	});
 });
 
+describe("conversation_status_changed", () => {
+	const statusChanged = (status: string) =>
+		signed({
+			event: "conversation_status_changed",
+			id: 42,
+			status,
+			updated_at: 1760875300.5,
+		});
+
+	it("turns a status change to pending into conversation.handed_back", () => {
+		expect(inbound.parse(statusChanged("pending"))).toEqual({
+			ok: true,
+			event: {
+				type: "conversation.handed_back",
+				eventId: "chatwoot:conversation_status_changed:42:pending:1760875300.5",
+				conversationId: "42",
+			},
+		});
+	});
+
+	it("turns a status change to open into conversation.taken_over", () => {
+		expect(inbound.parse(statusChanged("open"))).toEqual({
+			ok: true,
+			event: {
+				type: "conversation.taken_over",
+				eventId: "chatwoot:conversation_status_changed:42:open:1760875300.5",
+				conversationId: "42",
+			},
+		});
+	});
+
+	it("ignores other status changes", () => {
+		expect(inbound.parse(statusChanged("resolved"))).toEqual({
+			ok: true,
+			event: null,
+		});
+		expect(inbound.parse(statusChanged("snoozed"))).toEqual({
+			ok: true,
+			event: null,
+		});
+	});
+});
+
 describe("other requests", () => {
 	it("ignores events the bot does not handle", () => {
 		const result = inbound.parse(

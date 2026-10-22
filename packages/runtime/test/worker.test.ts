@@ -13,11 +13,13 @@ import { call, say } from "../src/testing.ts";
 import { bot, singleAgent } from "./harness.ts";
 import {
 	DATABASE_URL,
+	handedBack,
 	humanBriefed,
 	humanReplied,
 	received,
 	resolved,
 	type TestDatabase,
+	takenOver,
 	testDatabase,
 	verifiedContact,
 } from "./support.ts";
@@ -588,6 +590,88 @@ describe.skipIf(!DATABASE_URL)("worker", () => {
 			"Asks for a price.",
 			t.runtime.config.texts.briefWithoutHandoff,
 		]);
+	});
+
+	it("a conversation taken over by a person stops the bot without any message", async () => {
+		const t = await bot(db, { script: [say("Hola, ¿qué necesitás?")] });
+		await t.send(received("hola"));
+		await t.settle();
+
+		await t.send(takenOver(), received("¿estás?"));
+		await t.settle();
+
+		expect(t.model.calls).toHaveLength(1);
+		expect(t.replies()).toEqual(["Hola, ¿qué necesitás?"]);
+	});
+
+	it("a conversation handed back answers the next customer message keeping the memory", async () => {
+		const t = await bot(db, {
+			script: [
+				say("¿De qué año es el auto?"),
+				say("Sobre el paragolpe del 2018: lo consultamos."),
+			],
+		});
+		await t.send(received("busco un paragolpe"));
+		await t.settle();
+		await t.send(takenOver(), humanReplied("es 2018, no hay stock"));
+		await t.settle();
+
+		await t.send(handedBack());
+		await t.settle();
+		expect(t.model.calls).toHaveLength(1);
+
+		await t.send(received("¿me lo pueden conseguir?"));
+		await t.settle();
+
+		expect(t.model.calls[1]?.texts).toEqual([
+			"busco un paragolpe",
+			"¿De qué año es el auto?",
+			"es 2018, no hay stock",
+			"¿me lo pueden conseguir?",
+		]);
+		expect(t.replies().at(-1)).toBe(
+			"Sobre el paragolpe del 2018: lo consultamos.",
+		);
+	});
+
+	it("a hand-back closes a pending handoff with the team's answer and keeps what the person said", async () => {
+		const t = await bot(db, {
+			script: [...askForPrice(), say("Te lo reservo.")],
+		});
+		await t.send(received("¿cuánto sale el filtro?"));
+		await t.settle();
+
+		await t.send(humanReplied("sale 11 mil"), handedBack());
+		await t.settle();
+		expect(t.model.calls).toHaveLength(2);
+
+		await t.send(received("¿me lo reservan?"));
+		await t.settle();
+
+		expect(t.model.calls[2]?.texts).toEqual([
+			"¿cuánto sale el filtro?",
+			"Te paso con alguien.",
+			"sale 11 mil",
+			"¿me lo reservan?",
+		]);
+		expect(String(t.model.calls[2]?.lastToolResult)).toMatch(
+			/handed it back to you/,
+		);
+		expect(t.replies().at(-1)).toBe("Te lo reservo.");
+	});
+
+	it("a hand-back in bot mode and a take-over in human mode change nothing", async () => {
+		const t = await bot(db, {
+			script: [...askForPrice(), say("Sigo yo.")],
+		});
+		await t.send(handedBack(), received("¿cuánto sale el filtro?"));
+		await t.settle();
+		await t.send(takenOver(), received("¿hola?"));
+		await t.settle();
+
+		expect(t.model.calls).toHaveLength(2);
+		const { rows } = await db.pool.query("select mode from conversations");
+		expect(rows).toEqual([{ mode: "human" }]);
 	});
 
 	it("a brief does not verify the phone and does not unlock a personal-data tool", async () => {

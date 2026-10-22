@@ -7,6 +7,7 @@ import {
 import type { z } from "zod";
 import {
 	ConversationResolvedPayload,
+	ConversationStatusChangedPayload,
 	MessageCreatedPayload,
 	outgoingAuthor,
 	toMessage,
@@ -24,8 +25,10 @@ export type ChatwootInboundOptions = {
 /**
  * Verifies and parses the webhooks Chatwoot sends to an Agent Bot.
  *
- * Handled: customer messages, public replies by human agents, and resolved
- * conversations. Everything else is acknowledged and ignored, including the
+ * Handled: customer messages, public replies by human agents, resolved
+ * conversations, and status changes, which say who answers: `pending` is the
+ * bot's, `open` a person's (RT-23, CW-05; it is how Chatwoot's own Captain
+ * decides too). Everything else is acknowledged and ignored, including the
  * bot's own messages, which Chatwoot echoes back.
  */
 export function chatwootInbound(
@@ -69,12 +72,37 @@ export function chatwootInbound(
 						}`,
 						conversationId: String(p.id),
 					}));
+				case "conversation_status_changed":
+					return read(ConversationStatusChangedPayload, json, (p) => {
+						const type = OWNER_BY_STATUS[p.status];
+						if (!type) return null;
+						return {
+							type,
+							eventId: `chatwoot:conversation_status_changed:${p.id}:${p.status}:${
+								p.updated_at ?? request.headers["x-chatwoot-delivery"] ?? ""
+							}`,
+							conversationId: String(p.id),
+						};
+					});
 				default:
 					return { ok: true, event: null };
 			}
 		},
 	};
 }
+
+/**
+ * A person gives a conversation back from the "Assigned agent" dropdown, which
+ * sets it to `pending`; the bot's own handoff, a person opening it, or a failed
+ * webhook set it to `open`. `resolved` arrives as `conversation_resolved`.
+ */
+const OWNER_BY_STATUS: Record<
+	string,
+	"conversation.handed_back" | "conversation.taken_over" | undefined
+> = {
+	pending: "conversation.handed_back",
+	open: "conversation.taken_over",
+};
 
 function read<S extends z.ZodType>(
 	schema: S,

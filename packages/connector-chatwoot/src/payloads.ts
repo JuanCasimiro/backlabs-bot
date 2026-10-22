@@ -57,6 +57,14 @@ export const ConversationResolvedPayload = z.object({
 	updated_at: z.number().nullish(),
 });
 
+/** Conversation#webhook_data with the status it changed to. */
+export const ConversationStatusChangedPayload = z.object({
+	event: z.literal("conversation_status_changed"),
+	id: z.number(),
+	status: z.string(),
+	updated_at: z.number().nullish(),
+});
+
 /** api/v1/models/_message.json.jbuilder, `message_type` as a number. */
 export const ApiMessage = z.object({
 	...MessageFields,

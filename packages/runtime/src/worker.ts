@@ -64,7 +64,7 @@ export function createWorker(options: WorkerOptions) {
 	async function processConversation(conversation: ConversationRecord) {
 		const pending = await pendingEvents(pool, conversation.id);
 		const upToSeq = pending.at(-1)?.seq ?? 0;
-		const paused = await waitingForTeam(conversation);
+		let paused = await waitingForTeam(conversation);
 		const folded = foldEvents(
 			conversation,
 			pending.map((p) => p.event),
@@ -76,6 +76,17 @@ export function createWorker(options: WorkerOptions) {
 			contact: folded.contact,
 			...(folded.resetMemory ? { threadId: null, checkpointId: null } : {}),
 		};
+
+		// RT-23: what the person said goes into the memory, and a pending
+		// handoff is over: the bot answers the next message from there.
+		if (folded.handedBack && next.threadId && next.checkpointId) {
+			next.checkpointId = await graph.handBack(
+				{ threadId: next.threadId, checkpointId: next.checkpointId },
+				folded.humanTurn,
+				paused !== null,
+			);
+			paused = null;
+		}
 
 		// Planned first: they happened before anything the agent answers now.
 		const forOperators: Intent[] = [
@@ -92,10 +103,20 @@ export function createWorker(options: WorkerOptions) {
 			folded.mode === "bot" &&
 			(folded.brief !== null || folded.messages.length > 0);
 		if (!answering || !folded.contact) {
-			// RT-17: the paused thread records what happened while a human owned
-			// the conversation, so the agent sees it when the team answers.
-			if (paused && !folded.resetMemory && folded.humanTurn.length > 0) {
-				next.checkpointId = await graph.append(paused, folded.humanTurn);
+			// RT-17, RT-23: the thread records what happened while a human owned
+			// the conversation, paused or not, so the agent sees it when the team
+			// answers or hands the conversation back. A hand-back recorded it already.
+			if (
+				!folded.handedBack &&
+				!folded.resetMemory &&
+				folded.humanTurn.length > 0 &&
+				next.threadId &&
+				next.checkpointId
+			) {
+				next.checkpointId = await graph.append(
+					{ threadId: next.threadId, checkpointId: next.checkpointId },
+					folded.humanTurn,
+				);
 			}
 			if (forOperators.length === 0) {
 				return commit({
