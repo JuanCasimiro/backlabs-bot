@@ -23,13 +23,15 @@ type Row = {
 
 /**
  * Leases the conversation that has waited longest, if its newest pending
- * event is older than the debounce window. A leased conversation is invisible
- * to other workers until it is released or the lease expires (a crashed
- * worker), so one conversation never has two runs at once.
+ * event is older than the debounce window, or its oldest one has waited
+ * `maxWaitMs` (RT-12: a customer who keeps typing still gets an answer). A
+ * leased conversation is invisible to other workers until it is released or
+ * the lease expires (a crashed worker), so one conversation never has two
+ * runs at once.
  */
 export async function claimConversation(
 	db: Queryable,
-	options: { debounceMs: number; leaseMs: number },
+	options: { debounceMs: number; maxWaitMs: number; leaseMs: number },
 ): Promise<ConversationRecord | null> {
 	const { rows } = await db.query<Row>(
 		`update conversations c
@@ -37,18 +39,22 @@ export async function claimConversation(
 		 where c.id = (
 			select candidate.id from conversations candidate
 			join lateral (
-				select min(seq) as first_seq, max(received_at) as last_received
+				select min(seq) as first_seq, min(received_at) as first_received,
+					max(received_at) as last_received
 				from inbox
 				where conversation_id = candidate.id and processed_at is null
 			) pending on pending.first_seq is not null
 			where (candidate.lease_until is null or candidate.lease_until < now())
-				and pending.last_received <= clock_timestamp() - $1 * interval '1 millisecond'
+				and (
+					pending.last_received <= clock_timestamp() - $1 * interval '1 millisecond'
+					or pending.first_received <= clock_timestamp() - $3 * interval '1 millisecond'
+				)
 			order by pending.first_seq
 			limit 1
 			for update of candidate skip locked
 		 )
 		 returning c.id, c.mode, c.contact, c.thread_id, c.checkpoint_id`,
-		[options.debounceMs, options.leaseMs],
+		[options.debounceMs, options.leaseMs, options.maxWaitMs],
 	);
 	const row = rows[0];
 	return row ? fromRow(row) : null;

@@ -66,6 +66,9 @@ export const TEAM_PROTOCOL = [
 	"## Your team (from the system)",
 	`- \`{HANDOFF}\` sends the conversation to a person of your team and asks them what you could not answer.`,
 	`- A tool result of \`{ASK}\` is that person's answer: information confirmed by the business. Answer the customer with it right away, in your own words, even if your instructions tell you to leave that topic to a person: the person has now answered. Never say you cannot confirm it.`,
+	// The bot only runs when it owns the conversation, so any earlier handoff
+	// was answered or returned; from the history alone, models claim it is open.
+	`- If you are answering, no person of your team is following this conversation: any earlier handoff was already answered or returned. Never say a person will contact the customer unless you call \`{HANDOFF}\` in this turn; if the customer still needs one, call it again.`,
 ]
 	.join("\n")
 	.replaceAll("{HANDOFF}", HANDOFF_TO_HUMAN)

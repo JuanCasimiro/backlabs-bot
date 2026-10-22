@@ -112,6 +112,42 @@ describe.skipIf(!DATABASE_URL)("worker", () => {
 		expect(await t.runtime.processNext()).toBe(false);
 	});
 
+	it("answers a customer who keeps typing once the first message has waited the maximum", async () => {
+		const t = await bot(db, {
+			script: [say("Te respondo todo junto.")],
+			debounceMs: 60_000,
+			maxWaitMs: 20_000,
+		});
+		await t.send(received("¿el vidrio lo tienen?"));
+		await db.pool.query(
+			"update inbox set received_at = now() - interval '25 seconds'",
+		);
+		await t.send(received("¿y me lo pueden conseguir?"));
+
+		await t.settle();
+
+		expect(t.model.calls[0]?.texts).toEqual([
+			"¿el vidrio lo tienen?",
+			"¿y me lo pueden conseguir?",
+		]);
+		expect(t.replies()).toEqual(["Te respondo todo junto."]);
+	});
+
+	it("keeps waiting while the customer types if the first message has not waited the maximum", async () => {
+		const t = await bot(db, {
+			script: [say("hola")],
+			debounceMs: 60_000,
+			maxWaitMs: 20_000,
+		});
+		await t.send(received("¿el vidrio lo tienen?"));
+		await db.pool.query(
+			"update inbox set received_at = now() - interval '10 seconds'",
+		);
+		await t.send(received("¿y me lo pueden conseguir?"));
+
+		expect(await t.runtime.processNext()).toBe(false);
+	});
+
 	it("never runs two workers on the same conversation at once", async () => {
 		const t = await bot(db, { script: [say("una sola vez")] });
 		await t.send(received("hola"));

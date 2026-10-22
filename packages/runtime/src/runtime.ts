@@ -18,6 +18,11 @@ export type RuntimeOptions = {
 	tools: Tool[];
 	/** Default 2 s: customers often send several short messages in a row. */
 	debounceMs?: number;
+	/**
+	 * Default 15 s: a customer who keeps typing gets an answer anyway, once
+	 * their first unanswered message has waited this long.
+	 */
+	maxWaitMs?: number;
 	/** Default 2 min: longer than any run is expected to take. */
 	leaseMs?: number;
 	retryDelayMs?: number;
@@ -41,6 +46,7 @@ export function createRuntime(options: RuntimeOptions) {
 		graph,
 		modelName: modelName(options.model),
 		debounceMs: options.debounceMs ?? 2_000,
+		maxWaitMs: options.maxWaitMs ?? 15_000,
 		leaseMs: options.leaseMs ?? 120_000,
 		direct: options.channel.direct ?? false,
 	});

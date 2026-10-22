@@ -23,6 +23,8 @@ export type WorkerOptions = {
 	modelName: string;
 	/** Quiet time after the last message before answering. */
 	debounceMs: number;
+	/** Longest a pending message waits for the quiet time (RT-12). */
+	maxWaitMs: number;
 	/** How long a worker owns a conversation before another may take it. */
 	leaseMs: number;
 	/** The channel has no inbox behind it (`ChannelPort.direct`, ADR 0007). */

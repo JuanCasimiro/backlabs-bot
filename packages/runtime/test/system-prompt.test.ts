@@ -21,4 +21,13 @@ describe("system prompt", () => {
 			/even if your instructions tell you to leave that topic to a person/,
 		);
 	});
+
+	it("tells the agent that no person follows the conversation while it answers", () => {
+		const prompt = systemPrompt(agent, context);
+
+		expect(prompt).toMatch(/no person of your team is following/);
+		expect(prompt).toMatch(
+			/Never say a person will contact the customer unless you call `handoff_to_human` in this turn/,
+		);
+	});
 });

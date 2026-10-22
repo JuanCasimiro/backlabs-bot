@@ -22,6 +22,7 @@ export async function bot(
 		config?: BotConfigInput;
 		tools?: Tool[];
 		debounceMs?: number;
+		maxWaitMs?: number;
 		/** A channel with no inbox behind it, like Telegram (ADR 0007). */
 		direct?: boolean;
 	} = {},
@@ -40,6 +41,9 @@ export async function bot(
 		config: options.config ?? singleAgent,
 		tools: options.tools ?? [],
 		debounceMs: options.debounceMs ?? 0,
+		...(options.maxWaitMs === undefined
+			? {}
+			: { maxWaitMs: options.maxWaitMs }),
 		retryDelayMs: 0,
 	});
 
