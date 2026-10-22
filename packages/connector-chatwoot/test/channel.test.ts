@@ -184,7 +184,7 @@ describe("perform", () => {
 		});
 	});
 
-	it("hands off to a team: assigns it and opens the conversation", async () => {
+	it("hands off to a team: assigns it, releases the bot and opens the conversation", async () => {
 		const { channel, calls } = fakeChatwoot();
 
 		await channel.perform({ ...key, type: "handoff", team: "sales" });
@@ -199,19 +199,25 @@ describe("perform", () => {
 			},
 			{
 				method: "POST",
+				path: "/conversations/42/assignments",
+				body: { assignee_id: null },
+			},
+			{
+				method: "POST",
 				path: "/conversations/42/toggle_status",
 				body: { status: "open" },
 			},
 		]);
 	});
 
-	it("hands off to any human by only opening the conversation", async () => {
+	it("hands off to any human: releases the bot so the conversation shows as unassigned, then opens it", async () => {
 		const { channel, calls } = fakeChatwoot();
 
 		await channel.perform({ ...key, type: "handoff" });
 
-		expect(calls.map((c) => c.path)).toEqual([
-			"/conversations/42/toggle_status",
+		expect(calls.map(({ path, body }) => ({ path, body }))).toEqual([
+			{ path: "/conversations/42/assignments", body: { assignee_id: null } },
+			{ path: "/conversations/42/toggle_status", body: { status: "open" } },
 		]);
 	});
 

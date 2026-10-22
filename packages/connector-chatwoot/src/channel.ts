@@ -142,6 +142,9 @@ export function chatwootChannel(options: ChatwootChannelOptions): ChannelPort {
 						}
 						await write(`${path}/assignments`, { team_id: teamId }, ignored);
 					}
+					// A bot conversation is assigned to the bot itself; left like that,
+					// it never shows under "Unassigned", where humans look for work.
+					await write(`${path}/assignments`, { assignee_id: null }, ignored);
 					// pending → open is how an Agent Bot hands a conversation to humans.
 					await write(`${path}/toggle_status`, { status: "open" }, ignored);
 					return {};

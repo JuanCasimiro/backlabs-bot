@@ -222,7 +222,10 @@ export function buildAgentGraph(options: {
 				handedOff = true;
 				respond({
 					ok: true,
-					detail: "A human will take over. Tell the customer briefly.",
+					// Models otherwise offer to keep collecting ("send me a photo and
+					// I'll add it"), but the bot stays silent until the team answers.
+					detail:
+						"A person of your team takes over from here; you will not answer again until they hand the conversation back. Tell the customer briefly, and do not offer to receive or do anything else yourself.",
 				});
 			} else if (call.name === REQUEST_PHONE && agent.mode === "autonomous") {
 				intents.push({
