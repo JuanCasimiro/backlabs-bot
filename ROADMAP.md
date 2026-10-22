@@ -56,6 +56,13 @@ Verified 2026-10-22: `tsc` and Biome clean, 147 tests passing against Postgres (
 | RT-19 | Voice notes | A `Transcriber` port: voice notes become text before the run. Self-hosted Whisper by default (customer audio must not go to a third party without the client's consent) | idea |
 | RT-20 | Cost in the run ledger | Price per model → cost per run, next to tokens | idea |
 | RT-10 | Import boundaries in CI | `dependency-cruiser`: domain cannot import runtime, adapters or LangGraph | idea |
+| RT-24 | Inactivity sweep | Conversations left with the bot past a threshold are judged by a separate model: complete → resolve with a note; not complete → hand off with the reason. When in doubt, keep open; re-check under a lock before acting (as Captain does). Spec [`docs/specs/captain-parity.md`](docs/specs/captain-parity.md) | idea |
+| RT-25 | Side-effect tools stop after a newer message | `Tool.readOnly`: tools with side effects check the inbox and are skipped if the customer wrote meanwhile; copilot mode only gets read-only tools. Spec [`docs/specs/captain-parity.md`](docs/specs/captain-parity.md) | idea |
+| RT-26 | Default prompt rules | Language of the customer's last message, no lists, one step at a time, no promises of future work, handoff by consent, untrusted reference material. Overridable. Spec [`docs/specs/captain-parity.md`](docs/specs/captain-parity.md) | idea |
+| RT-27 | Handoff message, reason and source | Configurable fixed handoff and closing messages (not generated), a reason category on `handoff_to_human`, a source on each handoff (tool, failure, inactivity, usage). Spec [`docs/specs/captain-parity.md`](docs/specs/captain-parity.md) | idea |
+| RT-28 | Output robustness | Detect a tool call leaked as text and retry once only if no tool ran; tool errors tell the model what to do next. Spec [`docs/specs/captain-parity.md`](docs/specs/captain-parity.md) | idea |
+| RT-29 | Channel length limit | `ChannelPort.maxLength`; a longer answer is rewritten once by the model, else the run fails. Spec [`docs/specs/captain-parity.md`](docs/specs/captain-parity.md) | idea |
+| RT-30 | Contact memory | Notes on the contact written at resolution and read back at the start of the next conversation. Spec [`docs/specs/captain-parity.md`](docs/specs/captain-parity.md) | idea |
 
 ### Developer experience
 
@@ -70,6 +77,8 @@ Verified 2026-10-22: `tsc` and Biome clean, 147 tests passing against Postgres (
 |---|---|---|
 | CW-04 | Chatwoot: a private note `/bot <facts>` briefs the bot, which answers the customer itself (`human.briefed`, already in core); other private notes stay ignored | idea — on Chatwoot humans answer from the inbox |
 | WA-01 | WhatsApp Cloud API direct connector (today WhatsApp arrives through Chatwoot) | idea |
+| CW-06 | Chatwoot: send the inbox's out-of-office template after a handoff, keep `waiting_since`, suppress templates while the bot answers. Spec [`docs/specs/captain-parity.md`](docs/specs/captain-parity.md) | idea |
+| CW-07 | Chatwoot: response window (business hours / outside / always), checked on create and reopen. Spec [`docs/specs/captain-parity.md`](docs/specs/captain-parity.md) | idea |
 
 ### Tools (`packages/tools-*`)
 
@@ -87,6 +96,7 @@ Verified 2026-10-22: `tsc` and Biome clean, 147 tests passing against Postgres (
 | ID | Feature | Status |
 |---|---|---|
 | KC-01 | On `conversation.resolved`, extract structured records per client schema into a review queue; nothing trusted automatically | idea |
+| KC-02 | Learn FAQs from human answers: on resolution, Q&A candidates only from what people said, deduplicated (embedding + model check) with a frequency counter, into a review queue; skip volatile facts (prices, stock). Spec [`docs/specs/captain-parity.md`](docs/specs/captain-parity.md) | idea |
 
 ### Observability and evals
 
@@ -139,3 +149,4 @@ Verified 2026-10-22: `tsc` and Biome clean, 147 tests passing against Postgres (
 | 2026-10-21 | A brief is the team's answer to the handoff: `handoff_to_human` pauses the graph and the brief resumes it as that tool's result. The user-turn framing (RT-13, `FROM_THE_TEAM`) is dropped: the model read it as the customer claiming a price and refused it. Same pause/resume plumbing as RT-05. Spec `docs/specs/brief-as-tool-result.md`. |
 | 2026-10-22 | First real test on Telegram: the bot told a customer a person would contact them while no handoff was open (the earlier one had been answered with a brief). The bot only runs when it owns the conversation, so the fact is constant and goes in the team protocol, not in per-run context (RT-21). The same test answered two questions sent 14 s apart separately: a longer debounce is now the client's choice, with a cap so the wait has a bound (RT-12). |
 | 2026-10-22 | Ownership follows the channel (RT-23, CW-05). On a local Chatwoot 4.19 an operator gave a conversation back from the assignee dropdown and the bot never heard of it; and after a failed webhook Chatwoot opened a conversation the bot kept answering. Chatwoot's own Captain keeps no second state: `pending` is the bot's, `open` a person's. We copied that contract instead of inventing one; Telegram's `/resume` is unchanged (still a resolution). |
+| 2026-10-22 | Read Chatwoot's Captain end to end and listed what it does that we lack (RT-24..30, CW-06..07, KC-02, spec `docs/specs/captain-parity.md`). Before building or fixing a connector, read how the platform's native agent does it first. |
